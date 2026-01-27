@@ -1,0 +1,38 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/schema.json",
+  "productName": "Papa Pet",
+  "version": "0.1.0",
+  "identifier": "com.example.papapet",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Papa Pet",
+        "width": 320,
+        "height": 320,
+        "minWidth": 320,
+        "minHeight": 320,
+        "maxWidth": 800,
+        "maxHeight": 500,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": true,
+        "dragDropEnabled": true,
+        "x": 1200,
+        "y": 680
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  }
+}

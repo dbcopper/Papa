@@ -1,0 +1,753 @@
+:root {
+  color-scheme: light;
+  --pet-size: 160px;
+  --bubble-gap: 16px;
+  --bubble-bg: rgba(255, 255, 255, 0.92);
+  --bubble-border: rgba(30, 30, 30, 0.15);
+  --accent: #ffb347;
+  --accent-strong: #ff7f50;
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  --eye-offset-x: 0px;
+  --eye-offset-y: 0px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  font-family: "Avenir Next", "Gill Sans", "Trebuchet MS", sans-serif;
+  overflow: hidden;
+}
+
+.app-root {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  cursor: grab;
+  background: transparent;
+  overflow: hidden;
+}
+
+.pet-stage {
+  position: absolute;
+  /* 固定在左上角，可以根据需要调整位置 */
+  left: 5px;
+  top: 5px ;
+  width: var(--pet-size);
+  height: var(--pet-size);
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  transition: width 0.3s ease-out;
+  /* 确保宠物位置不受窗口大小变化影响 */
+  z-index: 1;
+}
+
+.pet-stage.panel-open {
+  width: calc(var(--pet-size) + 300px);
+}
+
+
+.pet-stage.panel-fallback .bubble-panel {
+  left: 50%;
+  top: auto;
+  bottom: -12px;
+  transform: translateX(-50%);
+}
+
+
+.pet-wrapper {
+  /* 固定大小 - 始终不变 */
+  width: var(--pet-size) !important;
+  height: var(--pet-size) !important;
+  min-width: var(--pet-size) !important;
+  min-height: var(--pet-size) !important;
+  max-width: var(--pet-size) !important;
+  max-height: var(--pet-size) !important;
+  position: absolute;
+  /* 固定位置 - 始终不变 */
+  left: 0 !important;
+  top: 0 !important;
+
+  /* ✅ 团子/布丁形外轮廓（上圆下宽，对称，稳定） */
+  border-radius: 52% 52% 44% 44% / 38% 38% 62% 62%;
+
+  border: 2px solid transparent;
+  cursor: grab;
+  user-select: none;
+
+  /* 保持裁剪（不影响点击/拖拽/层级），但裁剪形状变成团子 */
+  overflow: hidden;
+
+  z-index: 2;
+  box-sizing: border-box;
+  /* transform 由 JavaScript 动画控制，不在这里设置 */
+}
+
+
+[data-no-drag] {
+  -webkit-app-region: no-drag;
+}
+
+
+.state-eat_chomp .pet-wrapper {
+  animation: none;
+  /* transform 由 JavaScript 动画控制，不在这里设置固定值 */
+  /* 确保大小和位置固定 */
+  width: var(--pet-size) !important;
+  height: var(--pet-size) !important;
+  left: 0 !important;
+  top: 0 !important;
+  border-color: #ffb3ba; /* 更柔和的粉色边框 */
+  border-width: 3px; /* 稍微粗一点，更明显 */
+  /* 允许 JavaScript 通过内联样式覆盖 transform */
+  will-change: transform;
+  /* 添加可爱的光晕效果 */
+  box-shadow: 0 0 20px rgba(255, 182, 193, 0.4);
+}
+
+.state-eat_chomp .pet-wrapper::after {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border: 3px dashed rgba(255, 182, 193, 0.6); /* 更柔和的粉色边框 */
+  border-radius: 50%;
+  animation: chomp-ring 0.8s ease-out; /* 延长动画时间 */
+}
+
+.state-thinking .pet-wrapper {
+  animation: none;
+  /* 不使用 scale，确保大小完全不变 */
+  transform: none;
+  /* 确保大小和位置固定 */
+  width: var(--pet-size) !important;
+  height: var(--pet-size) !important;
+  left: 0 !important;
+  top: 0 !important;
+  border-color: #f3c969;
+}
+
+.state-thinking .pet-wrapper::before {
+  content: "";
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  right: 18px;
+  top: 18px;
+  border-radius: 50%;
+  background: rgba(243, 201, 105, 0.95);
+  box-shadow: -16px 8px 0 rgba(243, 201, 105, 0.75),
+    -28px 18px 0 rgba(243, 201, 105, 0.5);
+  animation: think-float 1.6s ease-in-out infinite;
+}
+
+.state-success_happy .pet-wrapper {
+  animation: wiggle 0.7s ease-in-out;
+  /* 确保大小和位置固定 */
+  width: var(--pet-size) !important;
+  height: var(--pet-size) !important;
+  left: 0 !important;
+  top: 0 !important;
+  border-color: #6bd18b;
+}
+
+.state-success_happy .pet-wrapper::before,
+.state-success_happy .pet-wrapper::after {
+  content: "";
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: rgba(107, 209, 139, 0.9);
+  top: 12px;
+  left: 18px;
+  animation: sparkle 0.8s ease-out;
+}
+
+.state-success_happy .pet-wrapper::after {
+  top: 28px;
+  left: auto;
+  right: 20px;
+}
+
+.state-error_confused .pet-wrapper {
+  animation: shake 0.6s ease-in-out;
+  /* 确保大小和位置固定 */
+  width: var(--pet-size) !important;
+  height: var(--pet-size) !important;
+  left: 0 !important;
+  top: 0 !important;
+  border-color: #ff6b6b;
+}
+
+.state-error_confused .pet-wrapper::before {
+  content: "?";
+  position: absolute;
+  top: 10px;
+  right: 16px;
+  font-size: 18px;
+  color: rgba(255, 107, 107, 0.9);
+  transform: rotate(-8deg);
+}
+
+.state-waiting_for_drop .pet-wrapper {
+  animation: none;
+  /* 确保大小和位置固定 */
+  width: var(--pet-size) !important;
+  height: var(--pet-size) !important;
+  left: 0 !important;
+  top: 0 !important;
+  border-color: #ffd700; /* 金色边框，表示期待 */
+  border-width: 2px;
+  will-change: transform;
+  /* 添加期待的光晕效果 */
+  box-shadow: 0 0 15px rgba(255, 215, 0, 0.3);
+}
+
+.pet-layer {
+  position: absolute;
+  inset: 0;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  transform: scale(1);
+}
+
+
+.pet-layer.body {
+  /* ✅ 关键：不要再用圆脸占主导 */
+  background-image: none !important;
+
+  background-color: #FFF8E7 !important;
+
+  /* ✅ 跟着外壳形状走，确保身体就是团子形 */
+  border-radius: inherit;
+
+  z-index: 1;
+  opacity: 1 !important;
+  visibility: visible !important;
+  display: block !important;
+}
+
+.state-idle_breathe .pet-layer.body {
+  background-color: #FFF8E7; /* 奶油白色 */
+}
+
+.state-idle_blink .pet-layer.body {
+  background-color: #FFF8E7; /* 奶油白色 */
+}
+
+
+.state-eat_chomp .pet-layer.body {
+  background-color: #FFF8E7; /* 奶油白色 */
+}
+
+.state-thinking .pet-layer.body {
+  background-color: #FFF8E7; /* 奶油白色 */
+}
+
+.state-success_happy .pet-layer.body {
+  background-color: #FFF8E7; /* 奶油白色 */
+}
+
+.state-error_confused .pet-layer.body {
+  background-color: #FFF8E7; /* 奶油白色 */
+}
+
+.state-waiting_for_drop .pet-layer.body {
+  background-color: #FFF8E7; /* 奶油白色 */
+}
+
+.pet-layer.tail {
+  /* 隐藏尾巴，图片中没有尾巴 */
+  display: none !important;
+}
+
+.pet-layer.eyes {
+  inset: 35% 25% auto 25%; /* 调整位置，让眼睛更靠近中心 */
+  height: auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: absolute;
+  gap: 8px; /* 眼睛之间的小间距 */
+  pointer-events: none;
+  width: 50%; /* 更窄的宽度，眼睛更靠近 */
+  z-index: 3;
+}
+
+.pet-eye {
+  /* 极简风格：不需要白色背景，只需要小圆点 */
+  width: 12px; /* 小的圆形点 */
+  height: 12px;
+  min-width: 12px;
+  min-height: 12px;
+  background: transparent !important; /* 透明背景 */
+  border-radius: 50%;
+  position: relative;
+  flex-shrink: 0;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  overflow: visible; /* 允许溢出，显示小点 */
+  opacity: 1 !important;
+  visibility: visible !important;
+  /* 移除阴影 */
+}
+
+.pet-eye-left {
+  order: 1;
+}
+
+.pet-eye-right {
+  order: 2;
+}
+
+.pet-pupil {
+  position: absolute;
+  width: 12px; /* 小的深棕色圆点 */
+  height: 12px;
+  background: #5C4033; /* 深棕色 */
+  border-radius: 50%;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  transition: transform 0.05s linear;
+  pointer-events: none;
+  will-change: transform;
+  /* 极简风格，移除高光 */
+}
+.pet-pupil::after {
+  display: none; /* 移除高光 */
+}
+
+.state-idle_blink .pet-eye {
+  transform: scaleY(0.2);
+}
+
+
+.pet-layer.mouth {
+  position: absolute;
+  top: 65%;
+  left: 50%;
+  transform: translateX(-50%);
+  height: 8px;
+  width: 40px;
+  background: transparent !important;
+  border: none !important;
+  overflow: visible;
+  z-index: 2;
+  opacity: 1 !important;
+  visibility: visible !important;
+  display: block !important;
+  box-shadow: none;
+  /* 初始化 CSS 变量 */
+  --mouth-width: 40px;
+  --mouth-stroke-width: 3px;
+  --mouth-curve: 2px; /* 控制弯曲程度，值越小越弯曲 */
+}
+
+.pet-layer.mouth svg {
+  width: var(--mouth-width, 40px);
+  height: var(--mouth-height, 8px);
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.state-waiting_for_drop .pet-layer.mouth {
+  width: 100px !important;
+  height: 30px !important;
+  /* 确保容器仍然居中 */
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+}
+
+.state-waiting_for_drop .pet-layer.mouth svg {
+  width: 100px !important;
+  height: 30px !important;
+  /* 确保SVG也居中 */
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+}
+
+.pet-layer.mouth svg path {
+  stroke: #5C4033;
+  stroke-width: var(--mouth-stroke-width, 3);
+  fill: none;
+  stroke-linecap: round;
+}
+
+
+.state-eat_chomp .pet-layer.mouth {
+  /* 咀嚼时嘴巴可以稍微张开，但保持简单线条风格 */
+  border-bottom-width: 5px; /* 稍微粗一点表示张开 */
+  width: 45px; /* 稍微宽一点 */
+  /* transform 由 JavaScript 动画控制 */
+  will-change: transform;
+}
+
+.state-thinking .pet-layer.mouth {
+  transform: translateY(-4px) scaleX(0.6);
+}
+
+.pet-drag-hint {
+  position: absolute;
+  bottom: 12px;
+  font-size: 12px;
+  color: rgba(60, 60, 60, 0.6);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+
+.pet-controls {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  -webkit-app-region: no-drag;
+  z-index: 3;
+}
+
+.state-label {
+  position: absolute;
+  bottom: 8px;
+  right: 12px;
+  font-size: 11px;
+  color: rgba(30, 30, 30, 0.6);
+  padding: 2px 6px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.mute-toggle {
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 12px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.debug-toggle {
+  border: 1px dashed rgba(0, 0, 0, 0.2);
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 12px;
+  padding: 3px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.state-controls {
+  position: absolute;
+  left: 10px;
+  top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+  padding: 6px;
+  -webkit-app-region: no-drag;
+  z-index: 3;
+}
+
+.state-controls button {
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  background: white;
+  padding: 4px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.state-controls button.active {
+  border-color: #4aa3ff;
+  background: rgba(197, 231, 255, 0.8);
+}
+
+.context-menu {
+  position: absolute;
+  min-width: 140px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 10px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-shadow: var(--shadow);
+  z-index: 4;
+  -webkit-app-region: no-drag;
+}
+
+.context-menu button {
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  background: white;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.bubble-panel {
+  position: absolute;
+  /* 相对于 pet-stage 定位，确保与宠物位置相对固定 */
+  left: calc(var(--pet-size) + var(--bubble-gap));
+  top: 50%;
+  width: min(220px, calc(var(--window-width, 720px) - var(--pet-size) - var(--bubble-gap) - 20px));
+  min-width: 200px;
+  background: var(--bubble-bg);
+  border: 1px solid var(--bubble-border);
+  border-radius: 12px;
+  padding: 10px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  -webkit-app-region: no-drag;
+  z-index: 3;
+  transform: translateY(-50%);
+  animation: bubble-in 0.25s ease-out;
+  transition: left 0.3s ease-out, width 0.3s ease-out;
+}
+
+
+.bubble-panel.drag-over-preview {
+  opacity: 0.85;
+  border-color: #4aa3ff;
+  background: rgba(197, 231, 255, 0.85);
+}
+
+.bubble-panel.drag-over-preview .bubble-header {
+  color: #1b3f66;
+  font-weight: 500;
+}
+
+.bubble-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: #2d2a26;
+}
+
+.bubble-meta {
+  font-size: 11px;
+  color: rgba(60, 60, 60, 0.6);
+}
+
+.bubble-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bubble-actions button {
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  background: white;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  -webkit-app-region: no-drag;
+}
+
+.bubble-actions button:hover {
+  border-color: var(--accent-strong);
+}
+
+.bubble-output {
+  background: rgba(255, 248, 238, 0.9);
+  border-radius: 8px;
+  padding: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  position: relative;
+}
+
+.bubble-output::after {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: 12px;
+  border-width: 6px 6px 6px 0;
+  border-style: solid;
+  border-color: transparent rgba(255, 248, 238, 0.9) transparent transparent;
+}
+
+.streaming-text {
+  margin: 0;
+  color: #2d2a26;
+}
+
+.pet-debug {
+  position: absolute;
+  bottom: 8px;
+  left: 12px;
+  font-size: 10px;
+  color: rgba(60, 60, 60, 0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 220px;
+}
+
+.pet-debug-line {
+  color: rgba(60, 60, 60, 0.55);
+}
+
+.pet-assets {
+  display: none;
+}
+
+@keyframes breathe {
+  /* 移除 scale，确保大小完全不变 */
+  /* 可以使用其他方式实现呼吸效果，比如透明度或轻微的位置变化 */
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.98;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes wiggle {
+  0% {
+    transform: rotate(0deg);
+  }
+  30% {
+    transform: rotate(3deg);
+  }
+  60% {
+    transform: rotate(-3deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes shake {
+  0% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-4px);
+  }
+  50% {
+    transform: translateX(4px);
+  }
+  75% {
+    transform: translateX(-3px);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+@keyframes chomp-ring {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1.5); /* 更大的扩散效果，更可爱 */
+    opacity: 0;
+  }
+}
+
+@keyframes think-float {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.9;
+  }
+  50% {
+    transform: translateY(-6px);
+    opacity: 0.6;
+  }
+}
+
+@keyframes sparkle {
+  0% {
+    transform: scale(0.8) rotate(0deg);
+    opacity: 0.2;
+  }
+  60% {
+    transform: scale(1.2) rotate(25deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.6) rotate(60deg);
+    opacity: 0;
+  }
+}
+
+@keyframes bubble-in {
+  0% {
+    opacity: 0;
+    transform: translateY(-50%) translateX(-6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+  }
+}
+
+@media (max-width: 480px) {
+  .bubble-panel {
+    left: 50%;
+    top: auto;
+    bottom: 20px;
+    transform: translateX(-50%);
+  }
+}
+
+/* ===== 强制团子轮廓：更明显 + 轮廓直接画在 wrapper 上 ===== */
+.pet-wrapper {
+  /* 让轮廓可见：背景放在 wrapper 上 */
+  background: #FFF8E7 !important;
+
+  /* 更明显的团子（底部更平、两侧更鼓） */
+  /* border-radius: 60% 60% 52% 52% / 78% 78% 28% 28% !important; */
+  border-radius: 62% 62% 56% 56% / 86% 86% 18% 18% !important;
+
+  overflow: hidden !important;
+  
+}
+
+/* body 只当“占位层”，不要自己再画背景（避免视觉混乱） */
+.pet-layer.body {
+  background: transparent !important;
+  background-image: none !important;
+  border-radius: inherit !important;
+}
+
+/* 吃的虚线圈也跟随团子形（你现在这里还是 50% 圆） */
+.state-eat_chomp .pet-wrapper::after {
+  border-radius: inherit !important;
+}
+
+

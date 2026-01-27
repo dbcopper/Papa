@@ -1,0 +1,16 @@
+{
+  "identifier": "main-dev",
+  "description": "Dev permissions for the main window (events + devtools).",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:event:allow-listen",
+    "core:event:allow-emit",
+    "core:event:allow-emit-to",
+    "core:event:allow-unlisten",
+    "core:webview:allow-internal-toggle-devtools"
+  ]
+}
