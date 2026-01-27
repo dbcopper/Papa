@@ -84,12 +84,17 @@ body,
   cursor: grab;
   user-select: none;
 
-  /* 保持裁剪（不影响点击/拖拽/层级），但裁剪形状变成团子 */
+  /* 默认使用裁剪保证是完整团子形状 */
   overflow: hidden;
 
   z-index: 2;
   box-sizing: border-box;
   /* transform 由 JavaScript 动画控制，不在这里设置 */
+}
+
+/* 等待拖拽时，需要让大嘴可以稍微“溢出”团子，否则会被裁剪掉一截 */
+.state-waiting_for_drop .pet-wrapper {
+  overflow: visible !important;
 }
 
 
@@ -106,21 +111,18 @@ body,
   height: var(--pet-size) !important;
   left: 0 !important;
   top: 0 !important;
-  border-color: #ffb3ba; /* 更柔和的粉色边框 */
-  border-width: 3px; /* 稍微粗一点，更明显 */
+  /* 之前这里用粉色边框做提示，现在去掉以免出现粉红线条 */
+  border-color: transparent;
+  border-width: 0;
   /* 允许 JavaScript 通过内联样式覆盖 transform */
   will-change: transform;
-  /* 添加可爱的光晕效果 */
-  box-shadow: 0 0 20px rgba(255, 182, 193, 0.4);
+  /* 去掉粉色光晕，保持干净轮廓 */
+  box-shadow: none;
 }
 
 .state-eat_chomp .pet-wrapper::after {
-  content: "";
-  position: absolute;
-  inset: 8px;
-  border: 3px dashed rgba(255, 182, 193, 0.6); /* 更柔和的粉色边框 */
-  border-radius: 50%;
-  animation: chomp-ring 0.8s ease-out; /* 延长动画时间 */
+  /* 不再绘制内部粉色虚线圈，避免额外粉色线条 */
+  content: none;
 }
 
 .state-thinking .pet-wrapper {
@@ -205,8 +207,7 @@ body,
   height: var(--pet-size) !important;
   left: 0 !important;
   top: 0 !important;
-  border-color: #ffd700; /* 金色边框，表示期待 */
-  border-width: 2px;
+  border: none;
   will-change: transform;
   /* 添加期待的光晕效果 */
   box-shadow: 0 0 15px rgba(255, 215, 0, 0.3);
@@ -225,8 +226,7 @@ body,
 .pet-layer.body {
   /* ✅ 关键：不要再用圆脸占主导 */
   background-image: none !important;
-
-  background-color: #FFF8E7 !important;
+  background-color: transparent !important;
 
   /* ✅ 跟着外壳形状走，确保身体就是团子形 */
   border-radius: inherit;
@@ -237,33 +237,46 @@ body,
   display: block !important;
 }
 
+.pet-layer.body svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.pet-layer.body .bun-shape {
+  fill: #f8f8e0;
+  stroke: transparent;
+  stroke-width: 0;
+  transition: stroke 0.2s ease, stroke-width 0.2s ease;
+}
+
 .state-idle_breathe .pet-layer.body {
-  background-color: #FFF8E7; /* 奶油白色 */
+  background-color: transparent; /* 奶油白色 */
 }
 
 .state-idle_blink .pet-layer.body {
-  background-color: #FFF8E7; /* 奶油白色 */
+  background-color: transparent; /* 奶油白色 */
 }
 
 
 .state-eat_chomp .pet-layer.body {
-  background-color: #FFF8E7; /* 奶油白色 */
+  background-color: transparent; /* 奶油白色 */
 }
 
 .state-thinking .pet-layer.body {
-  background-color: #FFF8E7; /* 奶油白色 */
+  background-color: transparent; /* 奶油白色 */
 }
 
 .state-success_happy .pet-layer.body {
-  background-color: #FFF8E7; /* 奶油白色 */
+  background-color: transparent; /* 奶油白色 */
 }
 
 .state-error_confused .pet-layer.body {
-  background-color: #FFF8E7; /* 奶油白色 */
+  background-color: transparent; /* 奶油白色 */
 }
 
 .state-waiting_for_drop .pet-layer.body {
-  background-color: #FFF8E7; /* 奶油白色 */
+  background-color: transparent; /* 奶油白色 */
 }
 
 .pet-layer.tail {
@@ -345,7 +358,8 @@ body,
   background: transparent !important;
   border: none !important;
   overflow: visible;
-  z-index: 2;
+  /* 提升嘴巴层级，确保不会被身体遮挡 */
+  z-index: 4;
   opacity: 1 !important;
   visibility: visible !important;
   display: block !important;
@@ -1154,5 +1168,3 @@ body,
   font-size: 11px;
   font-style: italic;
 }
-
-

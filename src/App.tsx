@@ -3,6 +3,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { animate } from "animejs";
+import { gsap } from "gsap";
 
 const PET_LAYER_SRC = "/assets/pet-placeholder.png";
 
@@ -901,6 +902,7 @@ export default function App() {
       const mouth = mouthLayerRef.current;
       const svg = mouth.querySelector('svg');
       const svgPath = mouth.querySelector('path');
+      const openPath = mouth.querySelector('.mouth-open') as SVGPathElement | null;
       const ellipse = mouth.querySelector('ellipse');
       
       // 恢复SVG到正常40px尺寸
@@ -920,9 +922,31 @@ export default function App() {
         svgPath.style.display = '';
         svgPath.setAttribute('d', 'M 2 2 Q 20 7 38 2'); // 恢复正常的path
       }
+      if (openPath) {
+        openPath.style.display = 'none';
+        openPath.style.transform = "";
+      }
       if (ellipse) {
         ellipse.style.display = 'none';
       }
+      if (eyesLayerRef.current) {
+        gsap.set(eyesLayerRef.current, { clearProps: "transform" });
+      }
+      gsap.set(mouth, { clearProps: "transform" });
+      const mouthState = mouth as HTMLDivElement & {
+        __waitingMouthTween?: gsap.core.Tween | gsap.core.Timeline;
+        __waitingBodyTween?: gsap.core.Tween | gsap.core.Timeline;
+        __waitingEyeTweens?: gsap.core.Tween[];
+        __waitingTailTween?: gsap.core.Tween;
+      };
+      mouthState.__waitingMouthTween?.kill();
+      mouthState.__waitingBodyTween?.kill();
+      mouthState.__waitingTailTween?.kill();
+      mouthState.__waitingEyeTweens?.forEach((tween) => tween.kill());
+      delete mouthState.__waitingMouthTween;
+      delete mouthState.__waitingBodyTween;
+      delete mouthState.__waitingTailTween;
+      delete mouthState.__waitingEyeTweens;
     }
   }, [petState, isMuted]);
 
@@ -1177,45 +1201,50 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
     const mouth = mouthLayerRef.current;
     const eyes = eyesLayerRef.current;
     const tail = tailLayerRef.current;
-    const pupils = eyes.querySelectorAll('.pet-pupil');
+    const pupils = eyes.querySelectorAll(".pet-pupil");
+    const bunPath = body.querySelector(".bun-shape") as SVGPathElement | null;
+    const mouthSvg = mouth.querySelector("svg");
+    const mouthLine = mouth.querySelector("path") as SVGPathElement | null;
+    const mouthOpen = mouth.querySelector(".mouth-open") as SVGPathElement | null;
 
-    // 重置到初始状态
+    // 安全防御：关键元素缺失则不执行动画
+    if (!bunPath || !mouthSvg || !mouthLine || !mouthOpen) {
+      return;
+    }
+
+    // 重置到静止状态（对应 swallow_gsap 的 resetAll）
     const resetToInitial = () => {
-      // 确保 transform 完全重置，不使用 scale
-      // 身体保持不动，只重置嘴巴和眼睛
-      wrapper.style.transform = "translate(0px, 0px) rotate(0deg)";
-      animate(body, {
-        rotate: 0,
-        duration: 0
+      gsap.set(wrapper, {
+        clearProps: "transform"
       });
-      // 重置嘴巴到初始状态（简单线条风格）- 向下弯曲的微笑
-      mouth.style.setProperty('--mouth-stroke-width', '3px');
-      mouth.style.setProperty('--mouth-width', '40px');
-      mouth.style.setProperty('--mouth-curve', '7px');
-      const svgPath = mouth.querySelector('path');
-      const ellipse = mouth.querySelector('ellipse');
-      const svg = mouth.querySelector('svg');
-      
-      // 恢复SVG到正常尺寸
-      if (svg) {
-        svg.setAttribute('width', '40');
-        svg.setAttribute('height', '8');
-        svg.setAttribute('viewBox', '0 0 40 8');
-      }
-      
-      // 显示线条，隐藏椭圆
-      if (svgPath) {
-        svgPath.style.display = '';
-        svgPath.setAttribute('d', 'M 2 2 Q 20 7 38 2'); // 向下弯曲的微笑
-        svgPath.setAttribute('stroke-width', '3');
-      }
-      if (ellipse) {
-        ellipse.style.display = 'none';
-      }
-      animate(tail, {
-        rotate: 25,
-        duration: 0
+      gsap.set(body, {
+        clearProps: "transform"
       });
+      gsap.set(tail, {
+        rotation: 25
+      });
+
+      // 团子外形恢复为基础 path（不做 morph，只重置）
+      bunPath.setAttribute(
+        "d",
+        "M130 318 C130 205 190 130 260 130 C330 130 390 205 390 318 Q390 335 372 340 C330 350 190 350 148 340 Q130 335 130 318 Z"
+      );
+
+      // 嘴巴恢复为细线微笑
+      gsap.set(mouthSvg, {
+        attr: { width: 40, height: 8, viewBox: "0 0 40 8" }
+      });
+      mouth.style.setProperty("--mouth-width", "40px");
+      mouth.style.setProperty("--mouth-height", "8px");
+
+      mouthLine.style.display = "";
+      mouthLine.setAttribute("d", "M 2 2 Q 20 7 38 2");
+      mouthLine.setAttribute("stroke-width", "3");
+
+      mouthOpen.style.display = "none";
+      gsap.set(mouthOpen, { scaleX: 1, scaleY: 1, transformOrigin: "50% 50%" });
+
+      // 眼睛位置恢复
       pupils.forEach((pupil) => {
         const el = pupil as HTMLElement;
         const currentX = parseFloat(el.dataset.eyeX || "0");
@@ -1224,118 +1253,144 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
       });
     };
 
-    // 吃动画序列
-    // 1. 准备阶段：眼睛向下看，嘴巴大张（身体保持不动）
-    // 注意：不使用 scale，确保大小不变
-    // 眼睛向下看（看着食物，幅度更大）
+    resetToInitial();
+
+    // GSAP 吞咽时间线（参考 examples/swallow_gsap.html，做简化版）
+    const tl = gsap.timeline({
+      defaults: { ease: "power2.inOut" }
+    });
+
+    // 0) 轻微蓄力：整体团子被压扁一点
+    tl.to(
+      wrapper,
+      {
+        scaleX: 1.04,
+        scaleY: 0.96,
+        duration: 0.12,
+        transformOrigin: "50% 80%"
+      },
+      0
+    );
+
+    // 1) 张嘴：脸微微下移 + 嘴从线条切换到大嘴洞
+    // 眼睛往下看一点，像在看要吃的东西
     pupils.forEach((pupil) => {
       const el = pupil as HTMLElement;
       const currentX = parseFloat(el.dataset.eyeX || "0");
       const currentY = parseFloat(el.dataset.eyeY || "0");
-      const target = { y: currentY };
-      animate(target, {
-        y: 10, // 增加眼睛向下看的幅度
-        duration: 180,
-        ease: "outQuad",
-        update: () => {
-          const y = target.y;
-          el.style.transform = `translate(calc(-50% + ${currentX}px), calc(-50% + ${y}px))`;
-          el.dataset.eyeY = y.toString();
-        }
-      });
-    });
-
-    // 嘴巴稍微张开（简单线条风格）
-    // 使用 SVG path 绘制向下弯曲的微笑线条
-    const svgPath = mouth.querySelector('path');
-    const mouthAnim = { strokeWidth: 3, width: 40, curve: 7 };
-    // 初始化：向下弯曲的微笑 (M 2 2 Q 20 7 38 2) - 控制点y值越大，向下弯曲越明显（但要在viewBox范围内）
-    if (svgPath) {
-      svgPath.setAttribute('d', `M 2 2 Q 20 ${mouthAnim.curve} 38 2`);
-      svgPath.setAttribute('stroke-width', `${mouthAnim.strokeWidth}`);
-    }
-    mouth.style.setProperty('--mouth-width', `${mouthAnim.width}px`);
-    animate(mouthAnim, {
-      strokeWidth: 5,
-      width: 45,
-      curve: 7, // 保持一致的弯曲度
-      duration: 180,
-      ease: "outQuad",
-      update: () => {
-        // 更新 SVG path - 向下弯曲的微笑
-        if (svgPath) {
-          svgPath.setAttribute('d', `M 2 2 Q 20 ${mouthAnim.curve} 38 2`);
-          svgPath.setAttribute('stroke-width', `${mouthAnim.strokeWidth}`);
-        }
-        mouth.style.setProperty('--mouth-width', `${mouthAnim.width}px`);
-      }
-    });
-
-    // 2. 咀嚼阶段：嘴巴快速开合5次
-    window.setTimeout(() => {
-      // 嘴巴咀嚼动画（开合5次，简单线条风格）
-      // 使用共享的动画对象，确保状态连续
-      const svgPath = mouth.querySelector('path');
-      const mouthAnim = { strokeWidth: 5, width: 45, curve: 7 };
-      let chompCount = 0;
-      const maxChomps = 5; // 5次开合
-      
-      const chomp = () => {
-        if (chompCount >= maxChomps) {
-          // 所有咀嚼完成
-          return;
-        }
-        chompCount++;
-        
-        // 从当前状态切换到相反状态
-        // 如果当前是张开(5px)，则闭合(3px)；如果当前是闭合(3px)，则张开(5px)
-        const isCurrentlyOpen = mouthAnim.strokeWidth >= 4;
-        const targetStrokeWidth = isCurrentlyOpen ? 3 : 5;
-        const targetWidth = isCurrentlyOpen ? 40 : 45;
-        const targetCurve = 7; // 保持一致的弯曲度
-        
-        // 从当前状态动画到目标状态，使用更柔和的缓动
-        animate(mouthAnim, {
-          strokeWidth: targetStrokeWidth,
-          width: targetWidth,
-          curve: targetCurve,
-          duration: 120, // 稍微慢一点，更柔和
-          ease: "easeOutQuad", // 更柔和的缓动函数
-          update: () => {
-            // 更新 CSS 变量和 SVG - 向下弯曲的微笑
-            mouth.style.setProperty('--mouth-stroke-width', `${mouthAnim.strokeWidth}px`);
-            mouth.style.setProperty('--mouth-width', `${mouthAnim.width}px`);
-            mouth.style.setProperty('--mouth-curve', `${mouthAnim.curve}px`);
-            if (svgPath) {
-              svgPath.setAttribute('d', `M 2 2 Q 20 ${mouthAnim.curve} 38 2`);
-              svgPath.setAttribute('stroke-width', `${mouthAnim.strokeWidth}`);
-            }
-          },
-          complete: () => {
-            // 继续下一次开合
-            if (chompCount < maxChomps) {
-              chomp();
-            }
+      const data = { y: currentY };
+      tl.to(
+        data,
+        {
+          y: currentY + 8,
+          duration: 0.16,
+          ease: "power2.out",
+          onUpdate: () => {
+            const y = data.y;
+            el.style.transform = `translate(calc(-50% + ${currentX}px), calc(-50% + ${y}px))`;
+            el.dataset.eyeY = y.toString();
           }
-        });
-      };
-      
-      // 开始第一次咀嚼（从张开状态闭合）
-      chomp();
+        },
+        0.04
+      );
+    });
 
-      // 身体保持不动，只让嘴巴和眼睛动
-      // 尾巴可以轻微摆动增加生动感（更柔和的摆动）
-      animate(tail, {
-        rotate: [25, 32, 20, 30, 22, 28, 25], // 更柔和的摆动幅度
-        duration: 800,
-        ease: "easeInOutSine" // 更柔和的缓动
-      });
-    }, 180);
+    // 切换到大嘴洞
+    tl.add(() => {
+      mouthLine.style.display = "none";
+      mouthOpen.style.display = "";
+    }, 0.04);
 
-    // 3. 完成阶段：恢复初始状态（延长到1000ms以匹配新的动画时长）
-    window.setTimeout(() => {
+    // 大嘴洞放大一点，像真正张开
+    tl.fromTo(
+      mouthOpen,
+      {
+        scaleX: 0.9,
+        scaleY: 0.9,
+        transformOrigin: "50% 50%"
+      },
+      {
+        scaleX: 1.05,
+        scaleY: 1.15,
+        duration: 0.18,
+        ease: "power2.out"
+      },
+      0.04
+    );
+
+    // 2) 吞咽：团子底部轻微鼓起 + 身体有一点点上下起伏
+    tl.to(
+      wrapper,
+      {
+        y: -4,
+        duration: 0.18,
+        ease: "power1.inOut"
+      },
+      0.22
+    );
+    tl.to(
+      wrapper,
+      {
+        y: 0,
+        duration: 0.24,
+        ease: "power1.out"
+      },
+      0.4
+    );
+
+    // 尾巴跟着轻轻摇一下
+    tl.to(
+      tail,
+      {
+        rotate: 30,
+        duration: 0.18,
+        ease: "sine.inOut"
+      },
+      0.22
+    ).to(
+      tail,
+      {
+        rotate: 22,
+        duration: 0.24,
+        ease: "sine.inOut"
+      },
+      0.4
+    );
+
+    // 3) 合嘴回微笑
+    tl.to(
+      mouthOpen,
+      {
+        scaleX: 0.9,
+        scaleY: 0.8,
+        duration: 0.14,
+        ease: "power2.inOut"
+      },
+      0.46
+    );
+
+    tl.add(() => {
+      mouthOpen.style.display = "none";
+      mouthLine.style.display = "";
+      mouthLine.setAttribute("stroke-width", "3");
+    }, 0.62);
+
+    // 身体回弹到原始状态
+    tl.to(
+      wrapper,
+      {
+        scaleX: 1,
+        scaleY: 1,
+        duration: 0.26,
+        ease: "elastic.out(1, 0.6)"
+      },
+      0.6
+    );
+
+    // 动画结束后再做一次轻微 reset，确保状态完全干净
+    tl.add(() => {
       resetToInitial();
-    }, 1000);
+    }, 0.95);
   }
 
   function triggerWaitingAnimation() {
@@ -1352,29 +1407,53 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
     const eyes = eyesLayerRef.current;
     const tail = tailLayerRef.current;
     const pupils = eyes.querySelectorAll('.pet-pupil');
+    const mouthState = mouth as HTMLDivElement & {
+      __waitingMouthTween?: gsap.core.Tween | gsap.core.Timeline;
+      __waitingBodyTween?: gsap.core.Tween | gsap.core.Timeline;
+      __waitingEyeTweens?: gsap.core.Tween[];
+      __waitingTailTween?: gsap.core.Tween;
+      __waitingAnimation?: { pause: () => void };
+    };
+
+    if (mouthState.__waitingAnimation) {
+      try {
+        mouthState.__waitingAnimation.pause();
+      } catch (e) {
+        // 忽略错误
+      }
+      delete mouthState.__waitingAnimation;
+    }
+    mouthState.__waitingMouthTween?.kill();
+    mouthState.__waitingBodyTween?.kill();
+    mouthState.__waitingTailTween?.kill();
+    mouthState.__waitingEyeTweens?.forEach((tween) => tween.kill());
 
     // 等待状态：嘴巴张开，眼睛期待地看着
     // 眼睛稍微向下看（期待食物）
+    const eyeTweens: gsap.core.Tween[] = [];
     pupils.forEach((pupil) => {
       const el = pupil as HTMLElement;
       const currentX = parseFloat(el.dataset.eyeX || "0");
       const currentY = parseFloat(el.dataset.eyeY || "0");
       const target = { y: currentY };
-      animate(target, {
-        y: 6, // 稍微向下看，期待的样子
-        duration: 300,
-        ease: "outQuad",
-        update: () => {
+      const tween = gsap.to(target, {
+        y: 6,
+        duration: 0.3,
+        ease: "power2.out",
+        onUpdate: () => {
           const y = target.y;
           el.style.transform = `translate(calc(-50% + ${currentX}px), calc(-50% + ${y}px))`;
           el.dataset.eyeY = y.toString();
         }
       });
+      eyeTweens.push(tween);
     });
+    mouthState.__waitingEyeTweens = eyeTweens;
 
     // 嘴巴张开等待 - 使用椭圆O形状（更可爱，100px大嘴巴）
     const svg = mouth.querySelector('svg');
     const svgPath = mouth.querySelector('path');
+    const openPath = mouth.querySelector('.mouth-open') as SVGPathElement | null;
     
     if (!svg) {
       console.error("SVG element not found in mouth");
@@ -1382,120 +1461,56 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
     }
     
     // 将SVG调整为100px大尺寸（仅等待状态）
-    svg.setAttribute('width', '100');
-    svg.setAttribute('height', '30');
-    svg.setAttribute('viewBox', '0 -8 100 30');
-    mouth.style.setProperty('--mouth-width', '100px');
-    mouth.style.setProperty('--mouth-height', '30px');
-    mouth.style.width = '100px';
-    mouth.style.height = '30px';
+    // 注意：mouth-open 的路径在 y≈28 处有低点，
+    // 如果 viewBox 过低（比如高度 30，从 -8 到 22），底部会被裁掉形成一条“横线”
+    // 所以这里给足高度，确保整个 O 形嘴完全落在 viewBox 内。
+    svg.setAttribute("width", "100");
+    svg.setAttribute("height", "30");
+    svg.setAttribute("viewBox", "0 -8 100 40");
+    mouth.style.setProperty("--mouth-width", "100px");
+    mouth.style.setProperty("--mouth-height", "30px");
+    mouth.style.width = "100px";
+    mouth.style.height = "30px";
     // 确保SVG元素本身也设置尺寸
-    (svg as HTMLElement).style.width = '100px';
-    (svg as HTMLElement).style.height = '30px';
+    (svg as HTMLElement).style.width = "100px";
+    (svg as HTMLElement).style.height = "30px";
     
-    // 隐藏原来的线条
+    // 隐藏原来的线条，显示大嘴洞
     if (svgPath) {
       svgPath.style.display = 'none';
     }
-    
-    // 停止之前的动画（如果有）
-    if ((mouth as any).__waitingAnimation) {
-      try {
-        (mouth as any).__waitingAnimation.pause();
-      } catch (e) {
-        // 忽略错误
-      }
+    if (openPath) {
+      openPath.style.display = '';
+      gsap.set(openPath, { scaleX: 1, scaleY: 1, transformOrigin: "50% 50%" });
     }
-    
-    // 检查是否已有椭圆，如果没有则创建
-    let ellipse = mouth.querySelector('ellipse') as SVGEllipseElement | null;
-    if (!ellipse) {
-      console.log("Creating new ellipse element");
-      ellipse = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse') as SVGEllipseElement;
-      svg.appendChild(ellipse);
-      ellipse.setAttribute('fill', 'none');
-      ellipse.setAttribute('stroke', '#5C4033');
-      ellipse.setAttribute('stroke-linecap', 'round');
+
+    if (openPath) {
+      const breathingTl = gsap.timeline({
+        repeat: -1,
+        yoyo: true,
+        defaults: { ease: "sine.inOut", duration: 0.7 }
+      });
+      breathingTl.to(wrapper, { scaleX: 1.05, scaleY: 0.95, transformOrigin: "50% 75%" }, 0);
+      breathingTl.to(eyes, { y: 4 }, 0);
+      breathingTl.to(mouth, { y: 6 }, 0);
+      breathingTl.to(openPath, { scaleX: 1.04, scaleY: 1.16, transformOrigin: "50% 50%" }, 0);
+
+      mouthState.__waitingMouthTween = breathingTl;
+      mouthState.__waitingBodyTween = breathingTl;
+      console.log("GSAP waiting animation started");
     } else {
-      console.log("Ellipse element already exists");
-    }
-    
-    if (ellipse) {
-      console.log("Ellipse found/created, setting up animation");
-      // 确保椭圆可见（每次进入等待状态时都重新显示）
-      ellipse.style.display = '';
-      ellipse.style.visibility = 'visible';
-      ellipse.style.opacity = '1';
-      ellipse.removeAttribute('display'); // 移除可能的 display 属性
-      
-      // 设置椭圆的初始属性 - 可爱的大嘴巴（100px宽度）
-      // viewBox: "0 -8 100 30" 意味着 X: 0-100, Y: -8到22
-      // 椭圆应该完全居中在viewBox中
-      const centerX = 50; // SVG viewBox 中心X (100/2 = 50) - 完全居中
-      const centerY = 7; // SVG viewBox 中心Y ((-8 + 22) / 2 = 7) - 完全居中
-      const mouthAnim = { rx: 48, ry: 12, strokeWidth: 5 }; // rx 横向半径，ry 纵向半径（rx*2=96px，接近100px，留一点边距）
-      
-      console.log("Setting ellipse:", {
-        viewBox: svg.getAttribute('viewBox'),
-        svgWidth: svg.getAttribute('width'),
-        svgHeight: svg.getAttribute('height'),
-        centerX,
-        centerY,
-        rx: mouthAnim.rx,
-        ry: mouthAnim.ry,
-        totalWidth: mouthAnim.rx * 2,
-        totalHeight: mouthAnim.ry * 2,
-        ellipseLeft: centerX - mouthAnim.rx,
-        ellipseRight: centerX + mouthAnim.rx
-      });
-      
-      // 立即设置属性，确保可见
-      ellipse.setAttribute('cx', centerX.toString());
-      ellipse.setAttribute('cy', centerY.toString());
-      ellipse.setAttribute('rx', mouthAnim.rx.toString());
-      ellipse.setAttribute('ry', mouthAnim.ry.toString());
-      ellipse.setAttribute('stroke-width', mouthAnim.strokeWidth.toString());
-      
-      console.log("Ellipse attributes set:", {
-        cx: ellipse.getAttribute('cx'),
-        cy: ellipse.getAttribute('cy'),
-        rx: ellipse.getAttribute('rx'),
-        ry: ellipse.getAttribute('ry'),
-        totalWidth: (parseFloat(ellipse.getAttribute('rx') || '0') * 2),
-        display: ellipse.style.display
-      });
-      
-      // 嘴巴轻微开合动画（等待时的呼吸感）- 椭圆变大变小，更明显的动画
-      const animation = animate(mouthAnim, {
-        rx: [48, 50, 48],
-        ry: [12, 14, 12],
-        strokeWidth: [5, 5.5, 5],
-        duration: 1500,
-        ease: "easeInOutSine",
-        loop: true,
-        update: () => {
-          if (ellipse && ellipse.parentNode) {
-            ellipse.setAttribute('rx', mouthAnim.rx.toString());
-            ellipse.setAttribute('ry', mouthAnim.ry.toString());
-            ellipse.setAttribute('stroke-width', mouthAnim.strokeWidth.toString());
-          }
-        }
-      });
-      
-      // 存储动画引用以便后续清理
-      (mouth as any).__waitingAnimation = animation;
-      console.log("Animation started and stored");
-    } else {
-      console.error("Failed to create or find ellipse element, svg:", svg);
+      console.error("Failed to create or find open mouth path, svg:", svg);
     }
 
     // 尾巴轻微摆动（期待的样子）
-    animate(tail, {
-      rotate: [25, 30, 20, 25],
-      duration: 1200,
-      ease: "easeInOutSine",
-      loop: true
+    const tailTween = gsap.to(tail, {
+      rotate: 28,
+      duration: 0.9,
+      ease: "sine.inOut",
+      repeat: -1,
+      yoyo: true
     });
+    mouthState.__waitingTailTween = tailTween;
   }
 
   function triggerExpressionAnimation(kind: "summarize" | "actions" | "remember") {
@@ -2009,6 +2024,7 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
       // Reset mouth SVG to normal state
       const svg = mouth.querySelector('svg');
       const svgPath = mouth.querySelector('path');
+      const openPath = mouth.querySelector('.mouth-open') as SVGPathElement | null;
       const ellipse = mouth.querySelector('ellipse');
       
       if (svg) {
@@ -2027,6 +2043,10 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
         svgPath.style.display = '';
         svgPath.setAttribute('d', 'M 2 2 Q 20 7 38 2');
       }
+      if (openPath) {
+        openPath.style.display = 'none';
+        openPath.style.transform = "";
+      }
       if (ellipse) {
         ellipse.style.display = 'none';
       }
@@ -2036,6 +2056,20 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
         (mouth as any).__waitingAnimation.pause();
         delete (mouth as any).__waitingAnimation;
       }
+      const mouthState = mouth as HTMLDivElement & {
+        __waitingMouthTween?: gsap.core.Tween | gsap.core.Timeline;
+        __waitingBodyTween?: gsap.core.Tween | gsap.core.Timeline;
+        __waitingEyeTweens?: gsap.core.Tween[];
+        __waitingTailTween?: gsap.core.Tween;
+      };
+      mouthState.__waitingMouthTween?.kill();
+      mouthState.__waitingBodyTween?.kill();
+      mouthState.__waitingTailTween?.kill();
+      mouthState.__waitingEyeTweens?.forEach((tween) => tween.kill());
+      delete mouthState.__waitingMouthTween;
+      delete mouthState.__waitingBodyTween;
+      delete mouthState.__waitingTailTween;
+      delete mouthState.__waitingEyeTweens;
     }
   };
 
@@ -2169,7 +2203,14 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
           ref={petWrapperRef}
           className="pet-wrapper"
         >
-          <div className="pet-layer body" ref={bodyLayerRef} />
+          <div className="pet-layer body" ref={bodyLayerRef}>
+            <svg viewBox="0 0 520 420" aria-hidden="true">
+              <path
+                className="bun-shape"
+                d="M130 318 C130 205 190 130 260 130 C330 130 390 205 390 318 Q390 335 372 340 C330 350 190 350 148 340 Q130 335 130 318 Z"
+              />
+            </svg>
+          </div>
           <div className="pet-layer tail" ref={tailLayerRef} />
           <div className={`pet-layer eyes ${activeState}`} ref={eyesLayerRef}>
             <div className="pet-eye pet-eye-left">
@@ -2192,6 +2233,12 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
                 strokeWidth="3"
                 fill="none"
                 strokeLinecap="round"
+              />
+              <path
+                className="mouth-open"
+                d="M20 4 C20 -4 40 -4 50 -4 C60 -4 80 -4 80 4 C80 20 66 28 50 28 C34 28 20 20 20 4 Z"
+                fill="#5C4033"
+                style={{ display: "none", transformOrigin: "50% 50%" }}
               />
             </svg>
           </div>
@@ -2532,5 +2579,3 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
     </div>
   );
 }
-
-
