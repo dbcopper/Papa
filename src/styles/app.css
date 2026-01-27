@@ -248,6 +248,8 @@ body,
   stroke: transparent;
   stroke-width: 0;
   transition: stroke 0.2s ease, stroke-width 0.2s ease;
+  transform-origin: 50% 50%;
+  transform: translateY(8px) scaleY(0.9);
 }
 
 .state-idle_breathe .pet-layer.body {

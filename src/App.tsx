@@ -2204,10 +2204,10 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
           className="pet-wrapper"
         >
           <div className="pet-layer body" ref={bodyLayerRef}>
-            <svg viewBox="0 0 520 420" aria-hidden="true">
+            <svg viewBox="0 0 520 420" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
               <path
                 className="bun-shape"
-                d="M130 318 C130 205 190 130 260 130 C330 130 390 205 390 318 Q390 335 372 340 C330 350 190 350 148 340 Q130 335 130 318 Z"
+                d="M122 318 C122 220 188 150 260 152 C332 150 398 220 398 318 Q398 340 376 346 C330 360 190 360 144 346 Q122 340 122 318 Z"
               />
             </svg>
           </div>
