@@ -26,9 +26,46 @@ type DropProcessedPayload = {
   record: DropRecord;
 };
 
+type BehaviorAnalysis = {
+  typingSpeed: number;
+  keyPressCount: number;
+  backspaceCount: number;
+  mouseMoveSpeed: number;
+  mouseClickCount: number;
+  idleTime: number;
+  activityLevel: number;
+};
+
+type UserMood = "focused" | "tired" | "excited" | "confused" | "relaxed" | null;
+
+type ConversationBubble = {
+  id: number;
+  text: string;
+  visible: boolean;
+};
+
+type LlmSettings = {
+  provider: "openai" | "anthropic";
+  apiKey: string;
+  model: string;
+};
+
 const BLINK_MIN_MS = 15000; /* 更频繁的眨眼，更可爱 */
 const BLINK_MAX_MS = 30000;
 const USE_MOCK = true;
+const MOOD_CHECK_INTERVAL = 3000; // 每3秒检查一次心情
+const CONVERSATION_COOLDOWN = 30000; // 对话冷却时间30秒
+
+const DEFAULT_LLM_SETTINGS: LlmSettings = {
+  provider: "openai",
+  apiKey: "",
+  model: "gpt-3.5-turbo"
+};
+
+const LLM_MODELS = {
+  openai: ["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo"],
+  anthropic: ["claude-3-haiku-20240307", "claude-3-sonnet-20240229", "claude-3-opus-20240229"]
+};
 const WINDOW_COLLAPSED = { width: 320, height: 320 };
 const WINDOW_EXPANDED = { width: 720, height: 320 }; // Width expanded for panel, height stays 320
 
@@ -49,12 +86,77 @@ function mockResponseText(kind: "summarize" | "actions" | "remember") {
 }
 
 async function getResponseText(
-  kind: "summarize" | "actions" | "remember"
+  kind: "summarize" | "actions" | "remember",
+  filePath: string,
+  llmSettings: LlmSettings
 ): Promise<string> {
-  if (USE_MOCK) {
-    return mockResponseText(kind);
+  // Require API key configuration
+  if (!llmSettings.apiKey) {
+    const operationName = {
+      summarize: "Summarize file",
+      actions: "Extract action items",
+      remember: "Create memory summary"
+    }[kind];
+    
+    return `⚠️ API Key Required\n\nTo use the "${operationName}" feature, please configure your LLM API Key first.\n\nClick the "⚙️ Settings" button in the top right corner and enter your API Key.\n\nSupported providers:\n• OpenAI (GPT-3.5, GPT-4)\n• Anthropic (Claude)`;
   }
-  return "LLM integration pending.";
+
+  try {
+    // Read file content
+    const fileContent = await invoke<string>("read_file_content", {
+      filePath: filePath
+    });
+
+    // Build prompt based on operation type
+    let prompt = "";
+    const fileName = filePath.split(/[\\/]/).pop() || "file";
+    
+    if (kind === "summarize") {
+      prompt = `Please summarize the content of the following file. File name: ${fileName}
+
+File content:
+${fileContent}
+
+Please provide a concise and accurate summary in English, highlighting the main content and key information.`;
+    } else if (kind === "actions") {
+      prompt = `Please extract action items and tasks from the following file. File name: ${fileName}
+
+File content:
+${fileContent}
+
+Please list all action items and tasks in English using a numbered list format. If there are no clear action items, please state so.`;
+    } else if (kind === "remember") {
+      prompt = `Please create a memory summary for the following file for future retrieval. File name: ${fileName}
+
+File content:
+${fileContent}
+
+Please create a concise memory summary in English, including:
+1. The main theme of the file
+2. Key information points
+3. Possible tags or keywords
+
+Format it for easy searching and recall.`;
+    }
+
+    // Call LLM API
+    const response = await invoke<string>("call_llm_api", {
+      request: {
+        provider: llmSettings.provider,
+        apiKey: llmSettings.apiKey,
+        model: llmSettings.model,
+        prompt: prompt,
+        maxTokens: kind === "remember" ? 200 : 500
+      }
+    });
+
+    return response.trim();
+  } catch (error) {
+    console.error(`Failed to process ${kind}:`, error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    // Fallback to mock response on error
+    return mockResponseText(kind) + `\n\n(Note: LLM API call failed: ${errorMessage})`;
+  }
 }
 
 function useOutsideClick(
@@ -83,8 +185,34 @@ function StreamingText({
   onComplete: () => void;
 }) {
   const [displayed, setDisplayed] = useState("");
+  const textRef = useRef<HTMLParagraphElement>(null);
+  const containerRef = useRef<HTMLElement | null>(null);
+  const scrollTimeoutRef = useRef<number | null>(null);
+  const lastScrollTimeRef = useRef<number>(0);
+  const onCompleteRef = useRef(onComplete);
+  const stepTimeoutRef = useRef<number | null>(null);
+
+  // Update onComplete ref when it changes
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
 
   useEffect(() => {
+    // Find container when component mounts or text changes
+    if (textRef.current) {
+      // Try to find either .bubble-output or .chat-result-content
+      containerRef.current = textRef.current.closest('.bubble-output') as HTMLElement ||
+                             textRef.current.closest('.chat-result-content') as HTMLElement;
+    }
+  }, [text]);
+
+  useEffect(() => {
+    // Clear any existing timeout
+    if (stepTimeoutRef.current) {
+      window.clearTimeout(stepTimeoutRef.current);
+      stepTimeoutRef.current = null;
+    }
+
     let index = 0;
     let cancelled = false;
 
@@ -92,24 +220,56 @@ function StreamingText({
       if (cancelled) return;
       index += 1;
       setDisplayed(text.slice(0, index));
+      
+      // Auto-scroll to bottom, but throttle it to avoid layout thrashing
+      // Only scroll every 100ms or when near the end
+      const now = Date.now();
+      const shouldScroll = (now - lastScrollTimeRef.current > 100) || (index >= text.length - 5);
+      
+      if (containerRef.current && shouldScroll) {
+        // Use requestAnimationFrame for smoother scrolling
+        requestAnimationFrame(() => {
+          if (containerRef.current && !cancelled) {
+            containerRef.current.scrollTop = containerRef.current.scrollHeight;
+            lastScrollTimeRef.current = now;
+          }
+        });
+      }
+      
       if (index >= text.length) {
-        onComplete();
+        // Use ref to call onComplete to avoid dependency issues
+        onCompleteRef.current();
+        // Final scroll to bottom
+        requestAnimationFrame(() => {
+          if (containerRef.current) {
+            containerRef.current.scrollTop = containerRef.current.scrollHeight;
+          }
+        });
         return;
       }
-      setTimeout(step, speedMs);
+      stepTimeoutRef.current = window.setTimeout(step, speedMs);
     }
 
     setDisplayed("");
+    lastScrollTimeRef.current = 0;
     if (text.length > 0) {
-      setTimeout(step, speedMs);
+      stepTimeoutRef.current = window.setTimeout(step, speedMs);
     }
 
     return () => {
       cancelled = true;
+      if (stepTimeoutRef.current) {
+        window.clearTimeout(stepTimeoutRef.current);
+        stepTimeoutRef.current = null;
+      }
+      if (scrollTimeoutRef.current) {
+        window.clearTimeout(scrollTimeoutRef.current);
+        scrollTimeoutRef.current = null;
+      }
     };
-  }, [text, speedMs, onComplete]);
+  }, [text, speedMs]); // Removed onComplete from dependencies
 
-  return <p className="streaming-text">{displayed}</p>;
+  return <p ref={textRef} className="streaming-text">{displayed}</p>;
 }
 
 export default function App() {
@@ -137,6 +297,33 @@ export default function App() {
     y: number;
     visible: boolean;
   }>({ x: 0, y: 0, visible: false });
+  const [behaviorAnalysis, setBehaviorAnalysis] = useState<BehaviorAnalysis | null>(null);
+  const [userMood, setUserMood] = useState<UserMood>(null);
+  const [conversationBubble, setConversationBubble] = useState<ConversationBubble | null>(null);
+  const [lastConversationTime, setLastConversationTime] = useState(0);
+  const [settingsVisible, setSettingsVisible] = useState(false);
+  const [llmSettings, setLlmSettings] = useState<LlmSettings>(() => {
+    // Load from localStorage
+    const saved = localStorage.getItem("llmSettings");
+    if (saved) {
+      try {
+        return { ...DEFAULT_LLM_SETTINGS, ...JSON.parse(saved) };
+      } catch {
+        return DEFAULT_LLM_SETTINGS;
+      }
+    }
+    return DEFAULT_LLM_SETTINGS;
+  });
+  const [chatDialogVisible, setChatDialogVisible] = useState(false);
+  const [chatInput, setChatInput] = useState("");
+  const [chatImage, setChatImage] = useState<string | null>(null); // Base64 image data
+  const [chatAction, setChatAction] = useState<"explain" | "save" | "reply_email" | null>(null);
+  const [chatResult, setChatResult] = useState<string>("");
+  const [chatResultExpanded, setChatResultExpanded] = useState(false);
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatStreamKey, setChatStreamKey] = useState(0);
+  const chatInputRef = useRef<HTMLInputElement>(null);
+  const chatImageRef = useRef<HTMLImageElement>(null);
 
   const panelRef = useRef<HTMLDivElement>(null);
   const idleTimeoutRef = useRef<number | null>(null);
@@ -153,6 +340,9 @@ export default function App() {
     kind: "summarize" | "actions" | "remember";
     text: string;
   } | null>(null);
+  const completedStreamIdsRef = useRef<Set<number>>(new Set());
+  const successHappyTimeoutRef = useRef<number | null>(null);
+  const petClickStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
 
   const appWindow = useMemo(() => getCurrentWindow(), []);
   const activeState = useMemo(() => {
@@ -527,6 +717,13 @@ export default function App() {
                 setPanelLockUntil(Date.now() + 600);
                 setPanelMode(null);
                 setPanelText("");
+                // Close chat dialog if open
+                setChatDialogVisible(false);
+                setChatInput("");
+                setChatImage(null);
+                setChatAction(null);
+                setChatResult("");
+                setChatResultExpanded(false);
                 // 确保 eat_chomp 状态持续至少 1000ms（动画时长）
                 // 计算已经过去的时间，确保总共持续 1000ms
                 const elapsed = Date.now() - dropStartTime;
@@ -729,6 +926,132 @@ export default function App() {
     }
   }, [petState, isMuted]);
 
+  // Listen to behavior analysis and infer user mood
+  useEffect(() => {
+    if (isMuted) return;
+
+    const unlisten = listen<BehaviorAnalysis>("behavior-analysis", (event) => {
+      const analysis = event.payload;
+      setBehaviorAnalysis(analysis);
+
+      // Infer user mood based on behavior
+      let mood: UserMood = null;
+      
+      // Focused: High typing speed, low backspace ratio, moderate activity
+      if (analysis.typingSpeed > 3.0 && 
+          analysis.backspaceCount / Math.max(analysis.keyPressCount, 1) < 0.15 &&
+          analysis.activityLevel > 0.4 && analysis.activityLevel < 0.8) {
+        mood = "focused";
+      }
+      // Tired: Low activity, high idle time, slow typing
+      else if (analysis.idleTime > 5.0 || 
+               (analysis.typingSpeed < 1.0 && analysis.activityLevel < 0.2)) {
+        mood = "tired";
+      }
+      // Excited: High mouse speed, high click rate, high activity
+      else if (analysis.mouseMoveSpeed > 500.0 || 
+               analysis.mouseClickCount > 10 ||
+               analysis.activityLevel > 0.8) {
+        mood = "excited";
+      }
+      // Confused: High backspace ratio, irregular activity
+      else if (analysis.backspaceCount / Math.max(analysis.keyPressCount, 1) > 0.3) {
+        mood = "confused";
+      }
+      // Relaxed: Low activity, low typing, but not idle
+      else if (analysis.activityLevel < 0.3 && analysis.idleTime < 3.0) {
+        mood = "relaxed";
+      }
+
+      if (mood !== userMood) {
+        setUserMood(mood);
+      }
+    });
+
+    return () => {
+      unlisten.then(fn => fn());
+    };
+  }, [isMuted, userMood]);
+
+  // Trigger proactive conversation based on mood
+  useEffect(() => {
+    if (isMuted || !userMood || panelVisible) return;
+    
+    const now = Date.now();
+    if (now - lastConversationTime < CONVERSATION_COOLDOWN) return;
+
+    // Only trigger conversation when mood changes or after a delay
+    const triggerConversation = async () => {
+      if (now - lastConversationTime < CONVERSATION_COOLDOWN) return;
+      
+      setLastConversationTime(now);
+      
+      // Build prompt based on mood and behavior
+      const moodDescription = {
+        focused: "The user is focused on work, with stable typing speed and low error rate",
+        tired: "The user looks tired, with low activity level, may need rest",
+        excited: "The user is very active, with fast mouse movement and frequent clicks",
+        confused: "The user seems hesitant, with frequent use of the backspace key",
+        relaxed: "The user is in a relaxed state, with low activity but not completely still"
+      }[userMood];
+
+      if (!behaviorAnalysis) return;
+      
+      const prompt = `You are a cute desktop pet named Papa. Based on the following user state, generate a short, warm, and natural conversation (no more than 20 words, in English):
+
+User state: ${moodDescription}
+Activity level: ${behaviorAnalysis.activityLevel.toFixed(2)}
+Typing speed: ${behaviorAnalysis.typingSpeed.toFixed(1)} keys/sec
+
+Please use first person, with a natural, warm, and cute tone, not too formal.`;
+
+      // Check if API key is configured
+      if (!llmSettings.apiKey) {
+        // Don't show conversation bubble if API key is not configured
+        // User should configure it first
+        return;
+      }
+
+      try {
+        const response = await invoke<string>("call_llm_api", {
+          request: {
+            provider: llmSettings.provider,
+            apiKey: llmSettings.apiKey,
+            model: llmSettings.model,
+            prompt: prompt,
+            maxTokens: 50
+          }
+        });
+
+        if (response) {
+          setConversationBubble({
+            id: Date.now(),
+            text: response.trim(),
+            visible: true
+          });
+
+          // Hide bubble after 5 seconds
+          setTimeout(() => {
+            setConversationBubble(prev => prev ? { ...prev, visible: false } : null);
+          }, 5000);
+        }
+      } catch (error) {
+        console.error("Failed to generate conversation:", error);
+        // Don't show fallback message, just log the error
+      }
+    };
+
+    // Trigger conversation after mood is stable for 5 seconds
+    const timer = setTimeout(triggerConversation, 5000);
+    return () => clearTimeout(timer);
+  }, [userMood, isMuted, panelVisible, lastConversationTime, behaviorAnalysis, llmSettings]);
+
+  // Save LLM settings to localStorage
+  const saveLlmSettings = (settings: LlmSettings) => {
+    setLlmSettings(settings);
+    localStorage.setItem("llmSettings", JSON.stringify(settings));
+  };
+
   useEffect(() => {
     if (isMuted) return;
 
@@ -753,18 +1076,37 @@ export default function App() {
 
   useEffect(() => {
     if (!panelVisible) return;
-    const timer = window.setTimeout(() => {
+    
+    // Don't auto-close if there's active content (streaming or completed text)
+    // Only auto-close if panel is empty or user is idle
+    const checkAndClose = () => {
+      // If there's panelMode, it means user clicked an action button
+      // If there's panelText, it means there's content (streaming or completed)
+      // Don't close in these cases
+      if (panelMode || panelText) {
+        return;
+      }
+      
+      // Only close if panel is truly empty (no action, no text)
       setPanelVisible(false);
       setPanelMode(null);
       setPanelText("");
-    }, 10000);
+    };
+    
+    // Check after 30 seconds, and only close if no content
+    const timer = window.setTimeout(checkAndClose, 30000);
 
     return () => window.clearTimeout(timer);
-  }, [panelVisible]);
+  }, [panelVisible, panelMode, panelText]);
 
   useOutsideClick(panelRef, () => {
     if (panelVisible) {
       if (Date.now() < panelLockUntil) return;
+      // Don't close if there's active content (streaming or completed text)
+      // Only close if panel is empty
+      if (panelMode || panelText) {
+        return;
+      }
       setPanelVisible(false);
       setPanelMode(null);
       setPanelText("");
@@ -774,8 +1116,8 @@ export default function App() {
   useEffect(() => {
     // Determine target window size based on state
     let next;
-    if (panelVisible) {
-      next = WINDOW_EXPANDED; // Full expansion when panel is visible
+    if (panelVisible || settingsVisible || chatDialogVisible) {
+      next = WINDOW_EXPANDED; // Full expansion when panel, settings, or chat dialog is visible
     } else {
       next = WINDOW_COLLAPSED; // Collapsed when idle
     }
@@ -788,6 +1130,7 @@ export default function App() {
     // Update CSS variable immediately for smooth visual transition
     const root = document.documentElement;
     root.style.setProperty("--window-width", `${next.width}px`);
+    root.style.setProperty("--window-height", `${next.height}px`);
 
     // Use CSS transition for visual smoothness, only call Rust at start and end
     // Immediate resize to target for instant response, then smooth transition
@@ -803,7 +1146,8 @@ export default function App() {
       ...prev,
       lastResize: `${next.width}x${next.height}`
     }));
-  }, [panelVisible, currentWindowSize]);
+  }, [panelVisible, settingsVisible, chatDialogVisible, currentWindowSize]);
+
 
   // Update CSS variable on window resize
   useEffect(() => {
@@ -1181,6 +1525,7 @@ export default function App() {
       animate(mouth, {
         scaleX: 1,
         scaleY: 1,
+        translateX: -20,
         translateY: 0,
         duration: 0
       });
@@ -1238,9 +1583,11 @@ export default function App() {
       });
 
       // 嘴巴稍微张开（思考状）
+      // 保持 translateX(-50%) 以确保居中（嘴巴宽度40px，-50% = -20px）
       animate(mouth, {
         scaleY: 1.3,
         scaleX: 0.9,
+        translateX: -20,
         translateY: -2,
         duration: 300,
         ease: "outQuad"
@@ -1283,9 +1630,12 @@ export default function App() {
       });
 
       // 嘴巴紧闭（专注状）
+      // 保持 translateX(-50%) 以确保居中（嘴巴宽度40px，-50% = -20px）
       animate(mouth, {
         scaleY: 0.7,
         scaleX: 1.1,
+        translateX: -20,
+        translateY: 0,
         duration: 250,
         ease: "outQuad"
       });
@@ -1342,9 +1692,11 @@ export default function App() {
       });
 
       // 嘴巴微笑（向上弯曲）
+      // 保持 translateX(-50%) 以确保居中（嘴巴宽度40px，-50% = -20px）
       animate(mouth, {
         scaleY: 0.8,
         scaleX: 1.2,
+        translateX: -20,
         translateY: -3,
         duration: 350,
         ease: "outQuad"
@@ -1370,6 +1722,21 @@ export default function App() {
 
   function handleAction(kind: "summarize" | "actions" | "remember") {
     if (!dropRecord) return;
+    
+    // Check if API key is configured, if not, open settings panel
+    if (!llmSettings.apiKey) {
+      setSettingsVisible(true);
+      setPanelMode(null);
+      setPanelText("");
+      return;
+    }
+    
+    // Clear any existing success_happy timeout
+    if (successHappyTimeoutRef.current) {
+      window.clearTimeout(successHappyTimeoutRef.current);
+      successHappyTimeoutRef.current = null;
+    }
+    
     actionRequestRef.current += 1;
     const requestId = actionRequestRef.current;
     setPanelMode(kind);
@@ -1379,10 +1746,12 @@ export default function App() {
     triggerExpressionAnimation(kind);
     
     void (async () => {
-      const nextText = await getResponseText(kind);
+      const nextText = await getResponseText(kind, dropRecord.path, llmSettings);
       if (requestId !== actionRequestRef.current) return;
       setPanelText(nextText);
       setStreamKey(requestId);
+      // Clear completed streamIds for the new request
+      completedStreamIdsRef.current.delete(requestId);
       pendingSaveRef.current = {
         id: requestId,
         recordId: dropRecord.id,
@@ -1393,6 +1762,19 @@ export default function App() {
   }
 
   function handleStreamComplete(streamId: number) {
+    // Prevent duplicate calls for the same streamId
+    if (completedStreamIdsRef.current.has(streamId)) {
+      console.log("handleStreamComplete already called for streamId:", streamId);
+      return;
+    }
+    completedStreamIdsRef.current.add(streamId);
+    
+    // Clear any existing success_happy timeout
+    if (successHappyTimeoutRef.current) {
+      window.clearTimeout(successHappyTimeoutRef.current);
+      successHappyTimeoutRef.current = null;
+    }
+    
     const pending = pendingSaveRef.current;
     if (pending && pending.id === streamId && pending.recordId > 0) {
       void invoke("save_mock_result", {
@@ -1400,6 +1782,12 @@ export default function App() {
         kind: pending.kind,
         content: pending.text
       });
+    }
+    
+    // Only change state if we're currently in thinking state
+    if (petState !== "thinking") {
+      console.log("handleStreamComplete called but petState is not thinking:", petState);
+      return;
     }
     
     // 重置所有动画到初始状态
@@ -1429,6 +1817,7 @@ export default function App() {
       animate(mouth, {
         scaleX: 1,
         scaleY: 1,
+        translateX: -20,
         translateY: 0,
         duration: 400,
         ease: "outQuad"
@@ -1470,8 +1859,185 @@ export default function App() {
     }
     
     setPetState("success_happy");
-    window.setTimeout(() => setPetState("idle_breathe"), 1200);
+    successHappyTimeoutRef.current = window.setTimeout(() => {
+      setPetState("idle_breathe");
+      successHappyTimeoutRef.current = null;
+    }, 1200);
   }
+
+  // Handle image paste
+  const handleImagePaste = (event: React.ClipboardEvent<HTMLInputElement>) => {
+    const items = event.clipboardData.items;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.indexOf('image') !== -1) {
+        const blob = item.getAsFile();
+        if (blob) {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const base64 = e.target?.result as string;
+            setChatImage(base64);
+          };
+          reader.readAsDataURL(blob);
+        }
+        event.preventDefault();
+        break;
+      }
+    }
+  };
+
+  // Handle chat action
+  const handleChatAction = async (action: "explain" | "save" | "reply_email") => {
+    if (!llmSettings.apiKey) {
+      setSettingsVisible(true);
+      return;
+    }
+
+    if (!chatInput.trim() && !chatImage) {
+      return;
+    }
+
+    setChatAction(action);
+    setChatLoading(true);
+    setChatResult("");
+    setChatResultExpanded(false);
+    setPetState("thinking");
+
+    try {
+      let prompt = "";
+      if (action === "explain") {
+        prompt = chatImage 
+          ? `Please explain the content of this image in detail (in English, clear and easy to understand):\n\nUser input: ${chatInput.trim() || "None"}`
+          : `Please explain the following content in detail (in English, clear and easy to understand):\n\n${chatInput.trim()}`;
+      } else if (action === "save") {
+        prompt = chatImage
+          ? `Please save the key information from this image (in English, concise notes for easy retrieval):\n\nUser input: ${chatInput.trim() || "None"}`
+          : `Please save the key information from the following content (in English, concise notes for easy retrieval):\n\n${chatInput.trim()}`;
+      } else if (action === "reply_email") {
+        prompt = chatImage
+          ? `Please help me write a reply email based on this image and user input (in English, professional and polite):\n\nUser input: ${chatInput.trim() || "None"}`
+          : `Please help me write a reply email based on the following content (in English, professional and polite):\n\n${chatInput.trim()}`;
+      }
+
+      // For images, we need to send base64 data to LLM
+      // Note: Most LLM APIs support base64 images in the prompt or as a separate parameter
+      // For now, we'll send the text prompt with a note about the image
+      if (chatImage) {
+        prompt += "\n\n[Note: An image has been attached, but the current implementation only processes text prompts]";
+      }
+
+      const response = await invoke<string>("call_llm_api", {
+        request: {
+          provider: llmSettings.provider,
+          apiKey: llmSettings.apiKey,
+          model: llmSettings.model,
+          prompt: prompt,
+          maxTokens: 500
+        }
+      });
+
+      setChatResult(response.trim());
+      setChatResultExpanded(true);
+      setChatStreamKey(prev => prev + 1);
+      setPetState("success_happy");
+      setTimeout(() => setPetState("idle_breathe"), 1200);
+    } catch (error) {
+      console.error("Failed to process chat action:", error);
+      setChatResult("Sorry, processing failed. Please check your API Key configuration.");
+      setChatResultExpanded(true);
+      setPetState("error_confused");
+      setTimeout(() => setPetState("idle_breathe"), 1200);
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
+  // Reset to initial state function (for pet click)
+  const resetToInitialOnClick = () => {
+    setPanelVisible(false);
+    setPanelMode(null);
+    setPanelText("");
+    setDropRecord(null);
+    setPetState("idle_breathe");
+    setSettingsVisible(false);
+    setConversationBubble(null);
+    setChatDialogVisible(false);
+    setChatInput("");
+    setChatImage(null);
+    setChatAction(null);
+    setChatResult("");
+    setChatResultExpanded(false);
+    
+    // Clear any pending timeouts
+    if (successHappyTimeoutRef.current) {
+      window.clearTimeout(successHappyTimeoutRef.current);
+      successHappyTimeoutRef.current = null;
+    }
+    if (eatChompTimeoutRef.current) {
+      window.clearTimeout(eatChompTimeoutRef.current);
+      eatChompTimeoutRef.current = null;
+    }
+    
+    // Reset animations to initial state
+    if (petWrapperRef.current && bodyLayerRef.current && mouthLayerRef.current && eyesLayerRef.current && tailLayerRef.current) {
+      const wrapper = petWrapperRef.current;
+      const body = bodyLayerRef.current;
+      const mouth = mouthLayerRef.current;
+      const eyes = eyesLayerRef.current;
+      const tail = tailLayerRef.current;
+      const pupils = eyes.querySelectorAll('.pet-pupil');
+      const eyeElements = eyes.querySelectorAll('.pet-eye');
+      
+      // Reset all elements to initial state (animations will be overridden)
+      wrapper.style.transform = "";
+      body.style.transform = "";
+      mouth.style.transform = "";
+      tail.style.transform = "";
+      
+      pupils.forEach((pupil) => {
+        const el = pupil as HTMLElement;
+        el.style.transform = "translate(calc(-50% + 0px), calc(-50% + 0px)) scale(1)";
+        el.dataset.eyeX = "0";
+        el.dataset.eyeY = "0";
+      });
+      
+      eyeElements.forEach((eye) => {
+        const el = eye as HTMLElement;
+        el.style.transform = "";
+      });
+      
+      // Reset mouth SVG to normal state
+      const svg = mouth.querySelector('svg');
+      const svgPath = mouth.querySelector('path');
+      const ellipse = mouth.querySelector('ellipse');
+      
+      if (svg) {
+        svg.setAttribute('width', '40');
+        svg.setAttribute('height', '8');
+        svg.setAttribute('viewBox', '0 0 40 8');
+        (svg as HTMLElement).style.width = '40px';
+        (svg as HTMLElement).style.height = '8px';
+      }
+      mouth.style.setProperty('--mouth-width', '40px');
+      mouth.style.setProperty('--mouth-height', '8px');
+      mouth.style.width = '40px';
+      mouth.style.height = '8px';
+      
+      if (svgPath) {
+        svgPath.style.display = '';
+        svgPath.setAttribute('d', 'M 2 2 Q 20 7 38 2');
+      }
+      if (ellipse) {
+        ellipse.style.display = 'none';
+      }
+      
+      // Stop waiting animation if exists
+      if ((mouth as any).__waitingAnimation) {
+        (mouth as any).__waitingAnimation.pause();
+        delete (mouth as any).__waitingAnimation;
+      }
+    }
+  };
 
   return (
     <div
@@ -1480,8 +2046,69 @@ export default function App() {
         const target = event.target as HTMLElement;
         if (target.closest("[data-no-drag]")) return;
         if (target.closest(".pet-wrapper")) {
+          // Record click start position and time for click detection
+          petClickStartRef.current = {
+            x: event.clientX,
+            y: event.clientY,
+            time: Date.now()
+          };
           event.preventDefault();
+        }
+      }}
+      onPointerUp={(event: React.PointerEvent<HTMLDivElement>) => {
+        const target = event.target as HTMLElement;
+        if (target.closest("[data-no-drag]")) return;
+        if (target.closest(".pet-wrapper") && petClickStartRef.current) {
+          const start = petClickStartRef.current;
+          const endTime = Date.now();
+          const moveDistance = Math.sqrt(
+            Math.pow(event.clientX - start.x, 2) + Math.pow(event.clientY - start.y, 2)
+          );
+          const clickDuration = endTime - start.time;
+          
+          // If it's a quick click (less than 300ms and moved less than 5px)
+          if (clickDuration < 300 && moveDistance < 5) {
+            // If chat dialog is open, close it and reset
+            if (chatDialogVisible) {
+              resetToInitialOnClick();
+            }
+            // If in initial state (no panel, no settings, no chat dialog), show chat dialog
+            else if (!panelVisible && !settingsVisible && !chatDialogVisible && petState === "idle_breathe") {
+              // Close file panel if open
+              setPanelVisible(false);
+              setPanelMode(null);
+              setPanelText("");
+              setDropRecord(null);
+              setChatDialogVisible(true);
+              // Focus input after dialog opens
+              setTimeout(() => {
+                chatInputRef.current?.focus();
+              }, 100);
+            } else {
+              // Otherwise, reset to initial
+              resetToInitialOnClick();
+            }
+            petClickStartRef.current = null;
+            return;
+          }
+          
+          // Otherwise, it was a drag, start window dragging
           void appWindow.startDragging();
+          petClickStartRef.current = null;
+        }
+      }}
+      onPointerMove={(event: React.PointerEvent<HTMLDivElement>) => {
+        const target = event.target as HTMLElement;
+        if (target.closest(".pet-wrapper") && petClickStartRef.current) {
+          const start = petClickStartRef.current;
+          const moveDistance = Math.sqrt(
+            Math.pow(event.clientX - start.x, 2) + Math.pow(event.clientY - start.y, 2)
+          );
+          // If moved more than 5px, it's a drag, start window dragging
+          if (moveDistance > 5) {
+            void appWindow.startDragging();
+            petClickStartRef.current = null;
+          }
         }
       }}
       onDragOver={(event: React.DragEvent<HTMLDivElement>) => {
@@ -1533,8 +2160,8 @@ export default function App() {
       }}
     >
       <div
-        className={`pet-stage ${panelVisible ? "panel-open" : ""} ${
-          panelVisible && !isExpanded ? "panel-fallback" : ""
+        className={`pet-stage ${panelVisible || settingsVisible || chatDialogVisible ? "panel-open" : ""} ${
+          (panelVisible || settingsVisible || chatDialogVisible) && !isExpanded ? "panel-fallback" : ""
         }`}
       >
         <div className="pet-drag-hint">Drop files here</div>
@@ -1569,6 +2196,14 @@ export default function App() {
             </svg>
           </div>
         </div>
+        {conversationBubble && conversationBubble.visible && (
+          <div className="conversation-bubble" data-no-drag>
+            <div className="conversation-bubble-content">
+              {conversationBubble.text}
+            </div>
+            <div className="conversation-bubble-tail" />
+          </div>
+        )}
         {panelVisible && (
           <div className={`bubble-panel`} ref={panelRef} data-no-drag>
             <div className="bubble-header">
@@ -1602,6 +2237,174 @@ export default function App() {
                 )}
               </>
             )}
+          </div>
+        )}
+        {chatDialogVisible && (
+          <div className={`bubble-panel chat-dialog`} data-no-drag>
+            <div className="bubble-header">
+              <span>💬 Chat with Papa</span>
+            </div>
+            <div className="chat-content">
+              <div className="chat-input-wrapper">
+                {chatImage && (
+                  <div className="chat-image-preview">
+                    <img ref={chatImageRef} src={chatImage} alt="Pasted" />
+                    <button
+                      className="chat-image-remove"
+                      onClick={() => setChatImage(null)}
+                      data-no-drag
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
+                <input
+                  ref={chatInputRef}
+                  type="text"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onPaste={handleImagePaste}
+                  placeholder={llmSettings.apiKey ? "Say something to Papa..." : "API Key required"}
+                  className="chat-input"
+                  disabled={chatLoading || !llmSettings.apiKey}
+                  data-no-drag
+                />
+                <div className="chat-actions">
+                  <button
+                    onClick={() => handleChatAction("explain")}
+                    disabled={chatLoading || (!chatInput.trim() && !chatImage) || !llmSettings.apiKey}
+                    className="chat-action-button"
+                    data-no-drag
+                  >
+                    Explain
+                  </button>
+                  <button
+                    onClick={() => handleChatAction("save")}
+                    disabled={chatLoading || (!chatInput.trim() && !chatImage) || !llmSettings.apiKey}
+                    className="chat-action-button"
+                    data-no-drag
+                  >
+                    Save
+                  </button>
+                  <button
+                    onClick={() => handleChatAction("reply_email")}
+                    disabled={chatLoading || (!chatInput.trim() && !chatImage) || !llmSettings.apiKey}
+                    className="chat-action-button"
+                    data-no-drag
+                  >
+                    Reply Email
+                  </button>
+                </div>
+              </div>
+              {chatResult && (
+                <div className="chat-result-container">
+                  <button
+                    className="chat-result-header"
+                    onClick={() => setChatResultExpanded(!chatResultExpanded)}
+                    data-no-drag
+                  >
+                    <span>{chatAction === "explain" ? "Explain" : chatAction === "save" ? "Save" : "Reply Email"}</span>
+                    <span className="chat-result-toggle">{chatResultExpanded ? "▼" : "▶"}</span>
+                  </button>
+                  {chatResultExpanded && (
+                    <div className="chat-result-content">
+                      <StreamingText
+                        key={`chat-${chatAction}-${chatStreamKey}`}
+                        text={chatResult}
+                        speedMs={22}
+                        onComplete={() => {}}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+              {chatLoading && (
+                <div className="chat-loading">Thinking...</div>
+              )}
+            </div>
+          </div>
+        )}
+        {settingsVisible && (
+          <div className={`bubble-panel settings-panel`} data-no-drag>
+            <div className="bubble-header">
+              <span>Settings</span>
+              <button
+                className="close-button"
+                onClick={() => setSettingsVisible(false)}
+                data-no-drag
+              >
+                ×
+              </button>
+            </div>
+            <div className="settings-content">
+              <div className="settings-section">
+                <label className="settings-label">LLM Provider</label>
+                <select
+                  value={llmSettings.provider}
+                  onChange={(e) =>
+                    saveLlmSettings({
+                      ...llmSettings,
+                      provider: e.target.value as "openai" | "anthropic",
+                      model: LLM_MODELS[e.target.value as "openai" | "anthropic"][0]
+                    })
+                  }
+                  className="settings-input"
+                >
+                  <option value="openai">OpenAI</option>
+                  <option value="anthropic">Anthropic</option>
+                </select>
+              </div>
+              
+              <div className="settings-section">
+                <label className="settings-label">Model</label>
+                <select
+                  value={llmSettings.model}
+                  onChange={(e) =>
+                    saveLlmSettings({
+                      ...llmSettings,
+                      model: e.target.value
+                    })
+                  }
+                  className="settings-input"
+                >
+                  {LLM_MODELS[llmSettings.provider].map((model) => (
+                    <option key={model} value={model}>
+                      {model}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              <div className="settings-section">
+                <label className="settings-label">API Key</label>
+                <input
+                  type="password"
+                  value={llmSettings.apiKey}
+                  onChange={(e) =>
+                    saveLlmSettings({
+                      ...llmSettings,
+                      apiKey: e.target.value
+                    })
+                  }
+                  placeholder="Enter your API key"
+                  className="settings-input"
+                />
+                <div className="settings-hint">
+                  {llmSettings.apiKey
+                    ? "✓ API key configured"
+                    : "⚠️ API key required for LLM conversations"}
+                </div>
+              </div>
+              
+              <div className="settings-section">
+                <button
+                  className="settings-save-button"
+                  onClick={() => setSettingsVisible(false)}
+                >
+                  Save & Close
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -1651,6 +2454,13 @@ export default function App() {
           }}
         >
           Test waiting
+        </button>
+        <button
+          className="settings-toggle"
+          data-no-drag
+          onClick={() => setSettingsVisible((prev) => !prev)}
+        >
+          ⚙️ Settings
         </button>
       </div>
 

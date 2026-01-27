@@ -1,12 +1,12 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::{DragDropEvent, Emitter, Manager, WindowEvent};
-use device_query::{DeviceQuery, DeviceState};
+use device_query::{DeviceQuery, DeviceState, Keycode};
 
 struct DbState {
   path: PathBuf,
@@ -26,6 +26,28 @@ struct DropRecord {
 #[serde(rename_all = "camelCase")]
 struct DropProcessedPayload {
   record: DropRecord,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct BehaviorAnalysis {
+  typing_speed: f64,        // 打字速度 (keys per second)
+  key_press_count: u32,     // 按键次数
+  backspace_count: u32,     // 退格键次数
+  mouse_move_speed: f64,     // 鼠标移动速度 (pixels per second)
+  mouse_click_count: u32,   // 鼠标点击次数
+  idle_time: f64,           // 空闲时间 (seconds)
+  activity_level: f64,       // 活动水平 (0.0 - 1.0)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LlmRequest {
+  provider: String,  // "openai" or "anthropic"
+  api_key: String,
+  model: String,
+  prompt: String,
+  max_tokens: Option<u32>,
 }
 
 fn init_db(db_path: &Path) -> Result<(), String> {
@@ -213,6 +235,113 @@ fn set_window_size(
   
   Ok(())
 }
+
+#[tauri::command]
+async fn call_llm_api(request: LlmRequest) -> Result<String, String> {
+  let max_tokens = request.max_tokens.unwrap_or(150);
+  
+  if request.provider == "openai" {
+    let client = reqwest::Client::new();
+    let url = "https://api.openai.com/v1/chat/completions";
+    
+    let body = serde_json::json!({
+      "model": request.model,
+      "messages": [
+        {
+          "role": "user",
+          "content": request.prompt
+        }
+      ],
+      "max_tokens": max_tokens,
+      "temperature": 0.7
+    });
+    
+    let response = client
+      .post(url)
+      .header("Authorization", format!("Bearer {}", request.api_key))
+      .header("Content-Type", "application/json")
+      .json(&body)
+      .send()
+      .await
+      .map_err(|e| format!("Request failed: {}", e))?;
+    
+    if response.status().is_success() {
+      let json: serde_json::Value = response.json().await
+        .map_err(|e| format!("Failed to parse response: {}", e))?;
+      
+      let content = json["choices"][0]["message"]["content"]
+        .as_str()
+        .ok_or_else(|| "No content in response".to_string())?;
+      
+      Ok(content.to_string())
+    } else {
+      let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+      Err(format!("API error: {}", error_text))
+    }
+  } else if request.provider == "anthropic" {
+    let client = reqwest::Client::new();
+    let url = "https://api.anthropic.com/v1/messages";
+    
+    let body = serde_json::json!({
+      "model": request.model,
+      "max_tokens": max_tokens,
+      "messages": [
+        {
+          "role": "user",
+          "content": request.prompt
+        }
+      ]
+    });
+    
+    let response = client
+      .post(url)
+      .header("x-api-key", request.api_key)
+      .header("anthropic-version", "2023-06-01")
+      .header("Content-Type", "application/json")
+      .json(&body)
+      .send()
+      .await
+      .map_err(|e| format!("Request failed: {}", e))?;
+    
+    if response.status().is_success() {
+      let json: serde_json::Value = response.json().await
+        .map_err(|e| format!("Failed to parse response: {}", e))?;
+      
+      let content = json["content"][0]["text"]
+        .as_str()
+        .ok_or_else(|| "No content in response".to_string())?;
+      
+      Ok(content.to_string())
+    } else {
+      let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+      Err(format!("API error: {}", error_text))
+    }
+  } else {
+    Err(format!("Unsupported provider: {}", request.provider))
+  }
+}
+
+#[tauri::command]
+async fn read_file_content(file_path: String) -> Result<String, String> {
+  let path = PathBuf::from(&file_path);
+  
+  // Check if file exists
+  if !path.exists() {
+    return Err(format!("File not found: {}", file_path));
+  }
+  
+  // Check file size (limit to 1MB to avoid memory issues)
+  let metadata = fs::metadata(&path).map_err(|e| format!("Failed to read file metadata: {}", e))?;
+  if metadata.len() > 1_000_000 {
+    return Err("File too large (max 1MB)".to_string());
+  }
+  
+  // Read file content
+  let content = fs::read_to_string(&path)
+    .map_err(|e| format!("Failed to read file: {}", e))?;
+  
+  Ok(content)
+}
 fn main() {
   tauri::Builder::default()
     .setup(|app| {
@@ -229,7 +358,7 @@ fn main() {
       app.manage(state);
 
       // Start global mouse tracking
-      let app_handle = app.handle().clone();
+      let app_handle_mouse = app.handle().clone();
       tauri::async_runtime::spawn(async move {
         let device_state = DeviceState::new();
         let mut last_x: Option<i32> = None;
@@ -250,7 +379,7 @@ fn main() {
             last_x = Some(x);
             last_y = Some(y);
             
-            if let Some(window) = app_handle.get_webview_window("main") {
+            if let Some(window) = app_handle_mouse.get_webview_window("main") {
               let _ = window.emit("global-mouse-move", serde_json::json!({
                 "x": x,
                 "y": y,
@@ -262,11 +391,109 @@ fn main() {
           // Emit button state change
           if last_button_pressed != button_pressed {
             last_button_pressed = button_pressed;
-            if let Some(window) = app_handle.get_webview_window("main") {
+            if let Some(window) = app_handle_mouse.get_webview_window("main") {
               let _ = window.emit("global-mouse-button", serde_json::json!({
                 "pressed": button_pressed
               }));
             }
+          }
+        }
+      });
+
+      // Start behavior analysis monitoring
+      let app_handle_behavior = app.handle().clone();
+      tauri::async_runtime::spawn(async move {
+        let device_state = DeviceState::new();
+        let mut last_keys: Vec<Keycode> = Vec::new();
+        let mut last_mouse_pos: Option<(i32, i32)> = None;
+        let mut last_mouse_click = false;
+        
+        let mut key_press_count = 0u32;
+        let mut backspace_count = 0u32;
+        let mut mouse_click_count = 0u32;
+        let mut mouse_move_distance = 0.0f64;
+        let mut last_analysis_time = Instant::now();
+        let mut last_activity_time = Instant::now();
+        
+        loop {
+          tokio::time::sleep(Duration::from_millis(100)).await; // Check every 100ms
+          
+          let mouse = device_state.get_mouse();
+          let keys = device_state.get_keys();
+          let current_time = Instant::now();
+          
+          // Track keyboard activity
+          if keys.len() > last_keys.len() {
+            key_press_count += 1;
+            // Check for backspace
+            if keys.contains(&Keycode::Backspace) && !last_keys.contains(&Keycode::Backspace) {
+              backspace_count += 1;
+            }
+            last_activity_time = current_time;
+          }
+          last_keys = keys.clone();
+          
+          // Track mouse activity
+          let current_pos = (mouse.coords.0, mouse.coords.1);
+          if let Some(last_pos) = last_mouse_pos {
+            let dx = (current_pos.0 - last_pos.0) as f64;
+            let dy = (current_pos.1 - last_pos.1) as f64;
+            let distance = (dx * dx + dy * dy).sqrt();
+            mouse_move_distance += distance;
+            if distance > 0.0 {
+              last_activity_time = current_time;
+            }
+          }
+          last_mouse_pos = Some(current_pos);
+          
+          if mouse.button_pressed[0] && !last_mouse_click {
+            mouse_click_count += 1;
+            last_activity_time = current_time;
+          }
+          last_mouse_click = mouse.button_pressed[0];
+          
+          // Emit behavior analysis every 2 seconds
+          let elapsed = current_time.duration_since(last_analysis_time);
+          if elapsed.as_secs() >= 2 {
+            let time_window = elapsed.as_secs_f64();
+            let idle_time = current_time.duration_since(last_activity_time).as_secs_f64();
+            
+            let typing_speed = if time_window > 0.0 {
+              key_press_count as f64 / time_window
+            } else {
+              0.0
+            };
+            
+            let mouse_move_speed = if time_window > 0.0 {
+              mouse_move_distance / time_window
+            } else {
+              0.0
+            };
+            
+            // Calculate activity level (0.0 - 1.0)
+            let activity_level = (typing_speed * 0.3 + (mouse_move_speed / 1000.0).min(1.0) * 0.3 + 
+                                 (mouse_click_count as f64 / time_window).min(5.0) / 5.0 * 0.4).min(1.0);
+            
+            let analysis = BehaviorAnalysis {
+              typing_speed,
+              key_press_count,
+              backspace_count,
+              mouse_move_speed,
+              mouse_click_count,
+              idle_time,
+              activity_level,
+            };
+            
+            if let Some(window) = app_handle_behavior.get_webview_window("main") {
+              let _ = window.emit("behavior-analysis", &analysis);
+            }
+            
+            // Reset counters
+            key_press_count = 0;
+            backspace_count = 0;
+            mouse_click_count = 0;
+            mouse_move_distance = 0.0;
+            last_analysis_time = current_time;
           }
         }
       });
@@ -277,7 +504,9 @@ fn main() {
       save_mock_result,
       hide_for,
       set_window_size,
-      process_drop_paths_command
+      process_drop_paths_command,
+      call_llm_api,
+      read_file_content
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
