@@ -1,0 +1,218 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Bun Swallow (GSAP + MorphSVG)</title>
+  <style>
+    body { margin:0; background:#202020; display:grid; place-items:center; height:100vh; font-family:system-ui; }
+    .panel { display:grid; gap:12px; justify-items:center; }
+    button {
+      padding:10px 14px; border-radius:12px; border:1px solid rgba(255,255,255,.15);
+      background:rgba(255,255,255,.06); color:#fff; cursor:pointer;
+    }
+    button:active { transform: translateY(1px); }
+    svg { width: 420px; height: 360px; }
+  </style>
+</head>
+<body>
+  <div class="panel">
+    <button id="btn">吞</button>
+
+    <svg viewBox="0 0 520 420">
+      <defs>
+        <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+          <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#000" flood-opacity="0.22"/>
+        </filter>
+
+        <!-- 让“体内鼓包/食团”永远在馒头内部 -->
+        <clipPath id="bunClip">
+          <use href="#bun" />
+        </clipPath>
+      </defs>
+
+      <!-- 角色 -->
+      <g id="bunWrap" filter="url(#shadow)">
+        <!-- 馒头外轮廓（会 morph） -->
+        <path id="bun"
+          fill="#f8f8e0"
+          d="M130 318
+             C130 205 190 130 260 130
+             C330 130 390 205 390 318
+             Q390 335 372 340
+             C330 350 190 350 148 340
+             Q130 335 130 318 Z" />
+
+        <!-- 脸（轻微下移配合“张嘴”） -->
+        <g id="face">
+          <circle cx="205" cy="230" r="10" fill="#584030"/>
+          <circle cx="315" cy="230" r="10" fill="#584030"/>
+
+          <!-- 嘴：同一个 path，在“微笑薄片”<->“大嘴洞”之间 morph -->
+          <path id="mouth"
+            d="M220 275
+               Q260 295 300 275
+               Q260 286 220 275 Z"
+            fill="none" stroke="#584030" stroke-width="10"
+            stroke-linejoin="round" />
+
+          <!-- 体内鼓包（吞下去后出现并下滑） -->
+          <ellipse id="bolus"
+            cx="260" cy="285" rx="0" ry="0"
+            fill="#e8d9b6" opacity="0"
+            clip-path="url(#bunClip)"/>
+        </g>
+      </g>
+
+      <!-- 被吞的“东西”（不是球：一个扁平小团子/糖块） -->
+      <path id="food"
+        d="M260 90
+           C274 92 286 104 284 120
+           C282 136 270 146 260 148
+           C250 146 238 136 236 120
+           C234 104 246 92 260 90 Z"
+        fill="#9ad6ff" stroke="#6bbcf6" stroke-width="4"
+        stroke-linejoin="round"/>
+
+      <!-- ====== 隐藏的关键帧形状（用于 morph） ====== -->
+
+      <!-- 嘴：张开的大嘴洞 -->
+      <path id="mouthOpen" style="visibility:hidden"
+        d="M200 270
+           C200 240 230 220 260 220
+           C290 220 320 240 320 270
+           C320 305 295 325 260 325
+           C225 325 200 305 200 270 Z"/>
+
+      <!-- 嘴：回到微笑薄片（同 mouth 初始） -->
+      <path id="mouthSmile" style="visibility:hidden"
+        d="M220 275
+           Q260 295 300 275
+           Q260 286 220 275 Z"/>
+
+      <!-- 馒头：张嘴时更“软”一点（更扁更宽） -->
+      <path id="bunOpen" style="visibility:hidden"
+        d="M122 318
+           C122 220 188 150 260 152
+           C332 150 398 220 398 318
+           Q398 340 376 346
+           C330 360 190 360 144 346
+           Q122 340 122 318 Z"/>
+
+      <!-- 馒头：吞咽时底部“鼓一下” -->
+      <path id="bunBulge" style="visibility:hidden"
+        d="M130 318
+           C125 200 190 130 260 130
+           C330 130 395 200 390 318
+           Q390 350 372 366
+           C330 392 190 392 148 366
+           Q130 350 130 318 Z"/>
+
+      <!-- 食物：进嘴时被挤扁（扁平形态） -->
+      <path id="foodSquish" style="visibility:hidden"
+        d="M260 108
+           C286 108 300 114 300 120
+           C300 126 286 132 260 132
+           C234 132 220 126 220 120
+           C220 114 234 108 260 108 Z"/>
+    </svg>
+  </div>
+
+  <!-- GSAP + MorphSVGPlugin -->
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/MorphSVGPlugin.min.js"></script>
+
+  <script>
+    gsap.registerPlugin(MorphSVGPlugin);
+
+    const btn = document.getElementById("btn");
+    let playing = false;
+
+    // 更自然的软体感：整体缩放的参考点
+    gsap.set("#bunWrap", { transformOrigin: "50% 80%", svgOrigin: "260 320" });
+
+    function resetAll() {
+      gsap.set("#bun", { morphSVG: "#bunWrap #bun" });
+      gsap.set("#bun", { morphSVG: "#bunWrap #bun" }); // 保底（某些环境第一次 morph 会抖）
+      gsap.set("#bun", { morphSVG: "#bunWrap #bun" });
+
+      gsap.set("#bun", { morphSVG: "#bunWrap #bun" }); // 不影响效果
+      gsap.set("#bun", { morphSVG: "M130 318 C130 205 190 130 260 130 C330 130 390 205 390 318 Q390 335 372 340 C330 350 190 350 148 340 Q130 335 130 318 Z" });
+
+      gsap.set("#food", { x: 0, y: 0, scale: 1, opacity: 1, rotation: 0, transformOrigin: "50% 50%" });
+      gsap.set("#mouth", {
+        morphSVG: { shape: "#mouthSmile", shapeIndex: "auto" },
+        fill: "none",
+        stroke: "#584030",
+        strokeWidth: 10
+      });
+      gsap.set("#face", { y: 0 });
+      gsap.set("#bolus", { attr: { rx: 0, ry: 0, cy: 285 }, opacity: 0 });
+      gsap.set("#bunWrap", { scaleX: 1, scaleY: 1 });
+      gsap.set("#bun", { morphSVG: { shape: "#bunWrap #bun", shapeIndex: "auto" } });
+      // 真正的 reset bun 到 rest
+      gsap.set("#bun", { morphSVG: { shape: "M130 318 C130 205 190 130 260 130 C330 130 390 205 390 318 Q390 335 372 340 C330 350 190 350 148 340 Q130 335 130 318 Z", shapeIndex:"auto" }});
+    }
+
+    function play() {
+      if (playing) return;
+      playing = true;
+      resetAll();
+
+      const tl = gsap.timeline({
+        defaults: { ease: "power2.inOut" },
+        onComplete: () => (playing = false)
+      });
+
+      // 0) 蓄力（软体轻挤）
+      tl.to("#bunWrap", { scaleX: 1.03, scaleY: 0.97, duration: 0.10, ease: "power1.out" }, 0);
+
+      // 1) 张开大嘴：馒头更扁更宽 + 脸下移 + 嘴 morph 成大洞
+      tl.to("#bun", { morphSVG: { shape: "#bunOpen", shapeIndex: "auto" }, duration: 0.16 }, 0.02);
+      tl.to("#face", { y: 8, duration: 0.16 }, 0.02);
+      tl.to("#mouth", {
+        morphSVG: { shape: "#mouthOpen", shapeIndex: "auto" },
+        fill: "#584030",
+        strokeWidth: 0,
+        duration: 0.16,
+        ease: "power2.out"
+      }, 0.04);
+
+      // 2) 食物下落到嘴里（不是球：会被挤扁）
+      tl.to("#food", { y: 145, duration: 0.22, ease: "power2.in" }, 0.06);
+      tl.to("#food", { morphSVG: { shape: "#foodSquish", shapeIndex: "auto" }, duration: 0.10, ease: "power1.in" }, 0.22);
+      tl.to("#food", { scale: 0.15, opacity: 0, duration: 0.10, ease: "power1.in" }, 0.26);
+
+      // 3) 合嘴回笑：嘴 morph 回薄片 + 线条回归
+      tl.to("#mouth", {
+        morphSVG: { shape: "#mouthSmile", shapeIndex: "auto" },
+        fill: "none",
+        strokeWidth: 10,
+        duration: 0.14,
+        ease: "power2.inOut"
+      }, 0.30);
+
+      // 4) 吞咽：馒头底部鼓一下 + 体内“食团”出现并下滑
+      tl.to("#bun", { morphSVG: { shape: "#bunBulge", shapeIndex: "auto" }, duration: 0.20 }, 0.30);
+
+      tl.to("#bolus", { opacity: 0.55, attr: { rx: 18, ry: 12, cy: 292 }, duration: 0.10, ease: "power1.out" }, 0.32);
+      tl.to("#bolus", { attr: { cy: 315, rx: 16, ry: 11 }, duration: 0.18 }, 0.42);
+      tl.to("#bolus", { attr: { cy: 342, rx: 12, ry: 9 }, opacity: 0.18, duration: 0.22 }, 0.60);
+      tl.to("#bolus", { attr: { rx: 0, ry: 0 }, opacity: 0, duration: 0.12, ease: "power1.out" }, 0.80);
+
+      // 5) 回弹：回到正常馒头 + 轻弹性
+      tl.to("#bunWrap", { scaleX: 1, scaleY: 1, duration: 0.28, ease: "elastic.out(1, 0.55)" }, 0.78);
+      tl.to("#bun", {
+        morphSVG: { shape: "M130 318 C130 205 190 130 260 130 C330 130 390 205 390 318 Q390 335 372 340 C330 350 190 350 148 340 Q130 335 130 318 Z", shapeIndex: "auto" },
+        duration: 0.32,
+        ease: "elastic.out(1, 0.55)"
+      }, 0.78);
+      tl.to("#face", { y: 0, duration: 0.22, ease: "power2.out" }, 0.78);
+
+      return tl;
+    }
+
+    btn.addEventListener("click", play);
+  </script>
+</body>
+</html>

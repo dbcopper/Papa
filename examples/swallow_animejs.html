@@ -1,0 +1,318 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>anime.js 软体吞咽</title>
+  <style>
+    body { margin:0; background:#202020; display:grid; place-items:center; height:100vh; font-family:system-ui; }
+    .panel { display:grid; gap:12px; justify-items:center; }
+    button {
+      padding:10px 14px; border-radius:12px; border:1px solid rgba(255,255,255,.15);
+      background:rgba(255,255,255,.06); color:#fff; cursor:pointer;
+    }
+    button:active { transform: translateY(1px); }
+    svg { width: 420px; height: 360px; }
+  </style>
+</head>
+<body>
+  <div class="panel">
+    <button id="btn">吞</button>
+
+    <svg viewBox="0 0 520 420">
+      <defs>
+        <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+          <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#000" flood-opacity="0.22"/>
+        </filter>
+
+        <clipPath id="bunClip">
+          <use href="#bun" />
+        </clipPath>
+      </defs>
+
+      <g id="bunWrap" filter="url(#shadow)">
+        <path id="bun" fill="#f8f8e0"
+          d="M130 318
+             C130 205 190 130 260 130
+             C330 130 390 205 390 318
+             Q390 335 372 340
+             C330 350 190 350 148 340
+             Q130 335 130 318 Z" />
+
+        <g id="face">
+          <circle cx="205" cy="230" r="10" fill="#584030"/>
+          <circle cx="315" cy="230" r="10" fill="#584030"/>
+
+          <!-- 嘴（默认微笑线） -->
+          <path id="mouth"
+            d="M220 275
+               Q260 295 300 275
+               Q260 286 220 275 Z"
+            fill="none" stroke="#584030" stroke-width="10"
+            stroke-linejoin="round" />
+
+          <!-- 体内鼓包 -->
+          <ellipse id="bolus" cx="260" cy="285" rx="0" ry="0"
+                   fill="#e8d9b6" opacity="0"
+                   clip-path="url(#bunClip)"/>
+        </g>
+      </g>
+
+      <!-- 被吞的“东西”（扁平小团子，不是球） -->
+      <path id="food"
+        d="M260 90
+           C274 92 286 104 284 120
+           C282 136 270 146 260 148
+           C250 146 238 136 236 120
+           C234 104 246 92 260 90 Z"
+        fill="#9ad6ff" stroke="#6bbcf6" stroke-width="4"
+        stroke-linejoin="round"/>
+
+      <!-- ====== 隐藏关键帧（anime.js 直接切 d） ====== -->
+      <path id="bunRest" style="visibility:hidden"
+        d="M130 318
+           C130 205 190 130 260 130
+           C330 130 390 205 390 318
+           Q390 335 372 340
+           C330 350 190 350 148 340
+           Q130 335 130 318 Z"/>
+
+      <path id="bunOpen" style="visibility:hidden"
+        d="M122 318
+           C122 220 188 150 260 152
+           C332 150 398 220 398 318
+           Q398 340 376 346
+           C330 360 190 360 144 346
+           Q122 340 122 318 Z"/>
+
+      <path id="bunBulge" style="visibility:hidden"
+        d="M130 318
+           C125 200 190 130 260 130
+           C330 130 395 200 390 318
+           Q390 350 372 366
+           C330 392 190 392 148 366
+           Q130 350 130 318 Z"/>
+
+      <path id="mouthSmile" style="visibility:hidden"
+        d="M220 275
+           Q260 295 300 275
+           Q260 286 220 275 Z"/>
+
+      <path id="mouthOpen" style="visibility:hidden"
+        d="M200 270
+           C200 240 230 220 260 220
+           C290 220 320 240 320 270
+           C320 305 295 325 260 325
+           C225 325 200 305 200 270 Z"/>
+
+      <path id="foodSquish" style="visibility:hidden"
+        d="M260 108
+           C286 108 300 114 300 120
+           C300 126 286 132 260 132
+           C234 132 220 126 220 120
+           C220 114 234 108 260 108 Z"/>
+    </svg>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/animejs@3.2.1/lib/anime.min.js"></script>
+  <script>
+    const btn = document.getElementById('btn');
+    let running = false;
+
+    const bun = document.getElementById('bun');
+    const bunWrap = document.getElementById('bunWrap');
+    const face = document.getElementById('face');
+    const mouth = document.getElementById('mouth');
+    const food = document.getElementById('food');
+    const bolus = document.getElementById('bolus');
+
+    const d = (id) => document.getElementById(id).getAttribute('d');
+
+    function reset() {
+      anime.set(bunWrap, { scaleX: 1, scaleY: 1 });
+      bun.setAttribute('d', d('bunRest'));
+      mouth.setAttribute('d', d('mouthSmile'));
+      mouth.setAttribute('fill', 'none');
+      mouth.setAttribute('stroke', '#584030');
+      mouth.setAttribute('stroke-width', '10');
+
+      anime.set(face, { translateY: 0 });
+
+      food.setAttribute('d', 'M260 90 C274 92 286 104 284 120 C282 136 270 146 260 148 C250 146 238 136 236 120 C234 104 246 92 260 90 Z');
+      anime.set(food, { translateX: 0, translateY: 0, scale: 1, opacity: 1 });
+
+      anime.set(bolus, { opacity: 0 });
+      bolus.setAttribute('rx', 0);
+      bolus.setAttribute('ry', 0);
+      bolus.setAttribute('cy', 285);
+    }
+
+    function eat() {
+      if (running) return;
+      running = true;
+      reset();
+
+      const tl = anime.timeline({
+        autoplay: true,
+        easing: 'easeInOutQuad',
+        complete: () => (running = false),
+      });
+
+      // 0) 蓄力（软挤）
+      tl.add({
+        targets: bunWrap,
+        scaleX: 1.03,
+        scaleY: 0.97,
+        duration: 100,
+        easing: 'easeOutQuad'
+      }, 0);
+
+      // 1) 张嘴：bun -> open + face 下移 + mouth -> open（并改成填充洞）
+      tl.add({
+        targets: bun,
+        d: [{ value: d('bunOpen') }],
+        duration: 160,
+      }, 20);
+
+      tl.add({
+        targets: face,
+        translateY: 8,
+        duration: 160
+      }, 20);
+
+      tl.add({
+        targets: mouth,
+        d: [{ value: d('mouthOpen') }],
+        duration: 160,
+        begin: () => {
+          mouth.setAttribute('fill', '#584030');
+          mouth.setAttribute('stroke-width', '0');
+        }
+      }, 40);
+
+      // 2) 食物落入 + 挤扁 + 消失
+      tl.add({
+        targets: food,
+        translateY: 145,
+        duration: 220,
+        easing: 'easeInQuad'
+      }, 60);
+
+      tl.add({
+        targets: food,
+        d: [{ value: d('foodSquish') }],
+        duration: 100,
+        easing: 'easeInQuad'
+      }, 220);
+
+      tl.add({
+        targets: food,
+        scale: 0.15,
+        opacity: 0,
+        duration: 100,
+        easing: 'easeInQuad'
+      }, 260);
+
+      // 3) 合嘴回笑（恢复线条）
+      tl.add({
+        targets: mouth,
+        d: [{ value: d('mouthSmile') }],
+        duration: 140,
+        begin: () => {
+          mouth.setAttribute('fill', 'none');
+          mouth.setAttribute('stroke', '#584030');
+          mouth.setAttribute('stroke-width', '10');
+        }
+      }, 300);
+
+      // 4) 吞咽：bun -> bulge + bolus 出现下滑
+      tl.add({
+        targets: bun,
+        d: [{ value: d('bunBulge') }],
+        duration: 200
+      }, 300);
+
+      tl.add({
+        targets: bolus,
+        opacity: [0, 0.55],
+        duration: 90,
+        easing: 'easeOutQuad',
+        begin: () => {
+          bolus.setAttribute('rx', 18);
+          bolus.setAttribute('ry', 12);
+          bolus.setAttribute('cy', 292);
+        }
+      }, 320);
+
+      tl.add({
+        targets: bolus,
+        duration: 180,
+        easing: 'easeInOutQuad',
+        update: (anim) => {
+          // 手动插值 cy/rx/ry 让“食团”更像软体下滑
+          const p = anim.progress / 100; // 0..1
+          const cy = 292 + (315 - 292) * p;
+          const rx = 18 + (16 - 18) * p;
+          const ry = 12 + (11 - 12) * p;
+          bolus.setAttribute('cy', cy);
+          bolus.setAttribute('rx', rx);
+          bolus.setAttribute('ry', ry);
+        }
+      }, 420);
+
+      tl.add({
+        targets: bolus,
+        duration: 220,
+        easing: 'easeInOutQuad',
+        update: (anim) => {
+          const p = anim.progress / 100;
+          const cy = 315 + (342 - 315) * p;
+          const rx = 16 + (12 - 16) * p;
+          const ry = 11 + (9 - 11) * p;
+          const op = 0.55 + (0.18 - 0.55) * p;
+          bolus.setAttribute('cy', cy);
+          bolus.setAttribute('rx', rx);
+          bolus.setAttribute('ry', ry);
+          bolus.style.opacity = op;
+        }
+      }, 600);
+
+      tl.add({
+        targets: bolus,
+        opacity: 0,
+        duration: 120,
+        easing: 'easeOutQuad',
+        begin: () => {
+          bolus.setAttribute('rx', 0);
+          bolus.setAttribute('ry', 0);
+        }
+      }, 820);
+
+      // 5) 回弹：bun 回 rest + bunWrap 弹回 + face 回位
+      tl.add({
+        targets: bunWrap,
+        scaleX: 1,
+        scaleY: 1,
+        duration: 280,
+        easing: 'easeOutElastic(1, .55)'
+      }, 780);
+
+      tl.add({
+        targets: bun,
+        d: [{ value: d('bunRest') }],
+        duration: 320,
+        easing: 'easeOutElastic(1, .55)'
+      }, 780);
+
+      tl.add({
+        targets: face,
+        translateY: 0,
+        duration: 220,
+        easing: 'easeOutQuad'
+      }, 780);
+    }
+
+    btn.addEventListener('click', eat);
+  </script>
+</body>
+</html>
