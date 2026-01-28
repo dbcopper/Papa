@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { animate } from "animejs";
 import { gsap } from "gsap";
 import { MorphSVGPlugin } from "gsap/MorphSVGPlugin";
 
@@ -76,40 +75,6 @@ const DEFAULT_LLM_SETTINGS: LlmSettings = {
   provider: "openai",
   apiKey: "",
   model: "gpt-3.5-turbo"
-};
-
-const getPupilState = (el: Element) => ({
-  x: parseFloat(el.getAttribute("data-eye-x") || "0"),
-  y: parseFloat(el.getAttribute("data-eye-y") || "0"),
-  scale: parseFloat(el.getAttribute("data-eye-scale") || "1")
-});
-
-const setPupilState = (el: Element, x: number, y: number, scale = 1) => {
-  el.setAttribute("data-eye-x", x.toString());
-  el.setAttribute("data-eye-y", y.toString());
-  el.setAttribute("data-eye-scale", scale.toString());
-  if (el instanceof SVGCircleElement) {
-    const baseX = parseFloat(el.getAttribute("data-base-x") || el.getAttribute("cx") || "0");
-    const baseY = parseFloat(el.getAttribute("data-base-y") || el.getAttribute("cy") || "0");
-    const baseR = parseFloat(el.getAttribute("data-base-r") || el.getAttribute("r") || "0");
-    el.setAttribute("cx", (baseX + x).toString());
-    el.setAttribute("cy", (baseY + y).toString());
-    el.setAttribute("r", (baseR * scale).toString());
-    return;
-  }
-  if (el instanceof HTMLElement) {
-    el.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px)) scale(${scale})`;
-  }
-};
-
-const getPupilOffset = (el: Element) => {
-  const { x, y } = getPupilState(el);
-  return { x, y };
-};
-
-const setPupilOffset = (el: Element, x: number, y: number) => {
-  const { scale } = getPupilState(el);
-  setPupilState(el, x, y, scale);
 };
 
 const LLM_MODELS = {
@@ -433,12 +398,8 @@ export default function App() {
       petState === "eat_action";
 
     if (isMuted || !shouldFollowMouse) {
-      // Reset eye positions when muted
-      const eyeL = bodyLayerRef.current?.querySelector("#eyeLWrap") as SVGElement | null;
-      const eyeR = bodyLayerRef.current?.querySelector("#eyeRWrap") as SVGElement | null;
-      if (eyeL && eyeR) {
-        gsap.set([eyeL, eyeR], { x: 0, y: 0 });
-      }
+      // 不在这里重置眼睛位置，让状态动画来控制
+      // 状态动画中的 resetToNeutral 会处理眼睛位置
       return;
     }
     if (isBlinkingRef.current) {
@@ -473,8 +434,9 @@ export default function App() {
       if (!petWrapperRef.current) {
         return;
       }
-      const eyeL = bodyLayerRef.current?.querySelector("#eyeLWrap") as SVGElement | null;
-      const eyeR = bodyLayerRef.current?.querySelector("#eyeRWrap") as SVGElement | null;
+      // 直接操作 #eyeL 和 #eyeR（与 gsap_example.html 保持一致）
+      const eyeL = bodyLayerRef.current?.querySelector("#eyeL") as SVGElement | null;
+      const eyeR = bodyLayerRef.current?.querySelector("#eyeR") as SVGElement | null;
       if (!eyeL || !eyeR) {
         return;
       }
@@ -644,23 +606,14 @@ export default function App() {
     document.addEventListener("mousemove", handleMouseMove, { passive: true, capture: true });
     window.addEventListener("mousemove", handleMouseMove, { passive: true });
     
-    // Initialize eye position from existing data if available
-    const initializeEyePosition = () => {
-      const eyeL = bodyLayerRef.current?.querySelector("#eyeLWrap") as SVGElement | null;
-      const eyeR = bodyLayerRef.current?.querySelector("#eyeRWrap") as SVGElement | null;
-      if (eyeL && eyeR) {
-        gsap.set([eyeL, eyeR], { x: 0, y: 0 });
-      }
-    };
-    
-    // Initialize eye position immediately (if data exists)
-    initializeEyePosition();
-    
+    // 不在这里初始化或重置眼睛位置
+    // 让 GSAP 状态动画中的 resetToNeutral 来控制眼睛位置
+
     return () => {
       // Cleanup window position update interval
       clearInterval(windowPositionUpdateInterval);
       clearInterval(windowCacheInterval);
-      
+
       // Cleanup global mouse listeners
       if (globalMouseUnlisten) {
         globalMouseUnlisten();
@@ -668,18 +621,13 @@ export default function App() {
       if (globalButtonUnlisten) {
         globalButtonUnlisten();
       }
-      
+
       document.removeEventListener("dragover", handleDragOver, { capture: true });
       document.removeEventListener("mousemove", handleMouseMove, { capture: true });
       window.removeEventListener("dragover", handleDragOver, true);
       window.removeEventListener("mousemove", handleMouseMove);
-      
-      // Reset on cleanup
-      const eyeL = bodyLayerRef.current?.querySelector("#eyeLWrap") as SVGElement | null;
-      const eyeR = bodyLayerRef.current?.querySelector("#eyeRWrap") as SVGElement | null;
-      if (eyeL && eyeR) {
-        gsap.set([eyeL, eyeR], { x: 0, y: 0 });
-      }
+
+      // 不在清理时重置眼睛位置，让状态动画来控制
     };
   }, [isMuted, petState]);
 
@@ -1217,8 +1165,6 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
     if (!svg) return;
     const q = gsap.utils.selector(svg);
     const eyeBlinkTargets = q("#eyeL, #eyeR");
-    const eyeLidTargets = q("#eyeLidL, #eyeLidR");
-    const eyeMoveTargets = q("#eyeLWrap, #eyeRWrap");
     const browTargets = q("#browL, #browR");
     const tearTargets = q("#tearL, #tearR");
     const dotTargets = q("#dot1, #dot2, #dot3");
@@ -1259,12 +1205,11 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
       gsap.set(q("#brows"), { opacity: 0 });
       gsap.set(browTargets, { rotation: 0, y: 0, transformOrigin: "50% 50%" });
 
+      // 眼睛：默认圆眼显示，其他隐藏（与 gsap_example.html 一致）
       gsap.set(q("#eyesCircle"), { opacity: 1 });
       gsap.set(q("#eyesCry"), { opacity: 0 });
       gsap.set(q("#eyesStar"), { opacity: 0 });
-      gsap.set(eyeMoveTargets, { x: 0, y: 0 });
-      gsap.set(eyeBlinkTargets, { scaleY: 1, opacity: 1 });
-      gsap.set(eyeLidTargets, { opacity: 0 });
+      gsap.set(eyeBlinkTargets, { scaleY: 1, y: 0, x: 0 });
 
       gsap.set(q("#mouth"), {
         morphSVG: { shape: shapes.mouthSmile, shapeIndex: "auto" },
@@ -1294,6 +1239,7 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
         .to(q("#face"), { y: 0, duration: 1.2 }, 1.2);
 
       blinkTL = killTL(blinkTL);
+      // 与 gsap_example.html 一致的眨眼动画
       const randomBlink = () => {
         const d = gsap.utils.random(1.6, 3.6);
         isBlinkingRef.current = true;
@@ -1305,12 +1251,8 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
             randomBlink();
           }
         })
-          .set(eyeBlinkTargets, { opacity: 1 })
-          .set(eyeLidTargets, { opacity: 0 })
-          .to(eyeBlinkTargets, { opacity: 0, duration: 0.04, ease: "power1.in" })
-          .to(eyeLidTargets, { opacity: 1, duration: 0.04, ease: "power1.in" }, "<")
-          .to(eyeLidTargets, { opacity: 0, duration: 0.06, ease: "power1.out" })
-          .to(eyeBlinkTargets, { opacity: 1, duration: 0.06, ease: "power1.out" }, "<");
+          .to(eyeBlinkTargets, { scaleY: 0.1, duration: 0.06, ease: "power1.in" })
+          .to(eyeBlinkTargets, { scaleY: 1.0, duration: 0.10, ease: "power1.out" });
       };
       randomBlink();
     };
@@ -1370,9 +1312,9 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
             .to(q("#face"), { rotation: 1.0, y: 0.2, duration: 0.6 }, 0.5)
             .to(q("#face"), { rotation: -1.5, y: 1.2, duration: 0.6 }, 1.1);
           stateTL
-            .to(eyeMoveTargets, { x: 5, y: -1, duration: 0.35 }, 0)
-            .to(eyeMoveTargets, { x: 2, y: 0, duration: 0.55 }, 0.35)
-            .to(eyeMoveTargets, { x: 5, y: -1, duration: 0.55 }, 0.9);
+            .to(eyeBlinkTargets, { x: 5, y: -1, duration: 0.35 }, 0)
+            .to(eyeBlinkTargets, { x: 2, y: 0, duration: 0.55 }, 0.35)
+            .to(eyeBlinkTargets, { x: 5, y: -1, duration: 0.55 }, 0.9);
           stateTL
             .to(q("#browL"), { y: -6, rotation: -10, duration: 0.45 }, 0)
             .to(q("#browL"), { y: -3, rotation: -6, duration: 0.55 }, 0.45)
@@ -1393,12 +1335,14 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
             .to(q("#bunWrap"), { scaleX: 1.03, scaleY: 0.97, duration: 0.18 }, 0)
             .to(q("#face"), { y: -2, duration: 0.18 }, 0)
             .to(q("#mouth"), { morphSVG: { shape: shapes.mouthSmile, shapeIndex: "auto" }, duration: 0.14 }, 0)
-            .to(eyeMoveTargets, { y: 2, duration: 0.18 }, 0)
+            .to(eyeBlinkTargets, { y: 2, duration: 0.18 }, 0)
             .to(q("#bunWrap"), { scaleX: 1, scaleY: 1, duration: 0.28, ease: "elastic.out(1,0.55)" }, 0.18);
           break;
         }
         case "comfy": {
-          gsap.set(eyeBlinkTargets, { scaleY: 0.2 });
+          // 舒服：眯眼 + 缓慢摇摆
+          // 直接在眼睛上设置 scaleY（与 gsap_example.html 保持一致）
+          gsap.set(eyeBlinkTargets, { scaleY: 0.2, x: 0, y: 0 });
           gsap.set(q("#mouth"), { morphSVG: { shape: shapes.mouthSmile, shapeIndex: "auto" } });
           gsap.set(q("#face"), { y: 1 });
           stateTL = gsap.timeline({ repeat: -1, yoyo: true, defaults: { ease: "sine.inOut" } })
@@ -1411,40 +1355,89 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
           break;
         }
         case "shy": {
+          // 害羞：脸红 + 眼睛左右躲 + 轻轻歪头
+          // 与 gsap_example.html 保持一致：直接操作 eyeBlinkTargets
           gsap.set(q("#blush"), { opacity: 0.8, scale: 0.95 });
-          stateTL = gsap.timeline({ repeat: -1, yoyo: true, defaults: { ease: "sine.inOut" } })
-            .to(q("#face"), { x: -2, y: 1, duration: 0.6 }, 0)
-            .to(q("#face"), { x: 2, y: 1, duration: 0.6 }, 0.6);
+          stateTL = gsap.timeline({ repeat: -1, yoyo: true, defaults: { ease: "sine.inOut" } });
+          // 脸红轻轻呼吸
+          stateTL.to(q("#blush"), { opacity: 0.95, scale: 1.05, duration: 0.8 }, 0);
+          // 眼睛左右躲（小幅）
+          stateTL
+            .to(eyeBlinkTargets, { x: 7, y: 0, duration: 0.45 }, 0)
+            .to(eyeBlinkTargets, { x: -6, y: 0, duration: 0.55 }, 0.45);
+          // 轻轻歪头
+          stateTL
+            .to(q("#face"), { rotation: -2.2, y: 1.5, duration: 0.8 }, 0)
+            .to(q("#face"), { rotation: 1.4, y: 0.5, duration: 0.8 }, 0.8);
+          stateTL.to(q("#mouth"), { morphSVG: { shape: shapes.mouthSmile, shapeIndex: "auto" }, duration: 0.2 }, 0);
           break;
         }
         case "cry": {
+          // 哭哭：倒八眼 + 委屈嘴 + 小抖 + 泪滴下落循环
+          // 与 gsap_example.html 保持一致
           gsap.set(q("#eyesCircle"), { opacity: 0 });
           gsap.set(q("#eyesCry"), { opacity: 1 });
           gsap.set(q("#tears"), { opacity: 1 });
           gsap.set(q("#mouth"), { morphSVG: { shape: shapes.mouthCry, shapeIndex: "auto" } });
-          stateTL = gsap.timeline({ repeat: -1, defaults: { ease: "sine.inOut" } })
-            .to(tearTargets, { y: 6, duration: 0.6 }, 0)
-            .to(tearTargets, { y: 0, duration: 0.6 }, 0.6);
+          stateTL = gsap.timeline({ repeat: -1, defaults: { ease: "sine.inOut" } });
+          // 小抖（哭唧唧）
+          stateTL
+            .to(q("#face"), { x: 1.2, duration: 0.08 }, 0)
+            .to(q("#face"), { x: -1.2, duration: 0.08, repeat: 3, yoyo: true }, 0.08)
+            .to(q("#face"), { x: 0, duration: 0.10 }, 0.40);
+          // 泪滴循环：下落 + 淡出 + 回位
+          stateTL
+            .fromTo(q("#tearL"), { y: 0, opacity: 0.9 }, { y: 18, opacity: 0.05, duration: 0.55, ease: "power2.in" }, 0.05)
+            .fromTo(q("#tearR"), { y: 0, opacity: 0.9 }, { y: 18, opacity: 0.05, duration: 0.55, ease: "power2.in" }, 0.15)
+            .set(tearTargets, { y: 0, opacity: 0.85 }, 0.70);
+          // 让哭眼也有点"挤"
+          stateTL
+            .to(q("#cryEyeL, #cryEyeR"), { y: 1.5, duration: 0.35 }, 0)
+            .to(q("#cryEyeL, #cryEyeR"), { y: 0, duration: 0.45 }, 0.35);
           break;
         }
         case "drool": {
-          gsap.set(q("#mouth"), { morphSVG: { shape: shapes.mouthO, shapeIndex: "auto" }, fill: "url(#mouthGrad)", strokeWidth: 0 });
-          gsap.set(q("#drool"), { opacity: 1 });
-          stateTL = gsap.timeline({ repeat: -1, yoyo: true, defaults: { ease: "sine.inOut" } })
-            .to(q("#drool"), { scaleY: 1.2, duration: 0.8 }, 0);
+          // 流口水：嘴角液滴循环 + 眯眼（更"馋"）
+          // 与 gsap_example.html 保持一致
+          gsap.set(q("#drool"), { opacity: 0.9, scaleY: 0.2, y: 0 });
+          stateTL = gsap.timeline({ repeat: -1, defaults: { ease: "sine.inOut" } });
+          // 轻微咀嚼感（很克制）
+          stateTL.to(q("#mouth"), { morphSVG: { shape: shapes.mouthSmile, shapeIndex: "auto" }, duration: 0.2 }, 0);
+          // 液滴长出来 -> 下坠 -> 回缩
+          stateTL
+            .to(q("#drool"), { scaleY: 1.15, duration: 0.55, ease: "power1.out" }, 0.05)
+            .to(q("#drool"), { y: 8, opacity: 0.65, duration: 0.55, ease: "power2.in" }, 0.05)
+            .to(q("#drool"), { scaleY: 0.2, y: 0, opacity: 0.9, duration: 0.25, ease: "power1.out" }, 0.68);
+          // 眯一点眼（直接操作 eyeBlinkTargets）
+          stateTL
+            .to(eyeBlinkTargets, { scaleY: 0.35, duration: 0.35 }, 0.05)
+            .to(eyeBlinkTargets, { scaleY: 0.55, duration: 0.55 }, 0.40);
           break;
         }
         case "excited": {
+          // 兴奋跳跳：星星眼 + squash & stretch 跳跃 + 星星微闪
+          // 与 gsap_example.html 保持一致
           gsap.set(q("#eyesCircle"), { opacity: 0 });
           gsap.set(q("#eyesStar"), { opacity: 1 });
-          stateTL = gsap.timeline({ repeat: -1, defaults: { ease: "power1.inOut" } })
-            .to(q("#bunWrap"), { y: -6, duration: 0.18 }, 0)
-            .to(q("#bunWrap"), { y: 0, duration: 0.22 }, 0.18);
+          gsap.set(q("#mouth"), { morphSVG: { shape: shapes.mouthSmile, shapeIndex: "auto" } });
+          stateTL = gsap.timeline({ repeat: -1, defaults: { ease: "sine.inOut" } });
+          // 经典 squash & stretch 跳跃
+          stateTL
+            .to(q("#bunWrap"), { y: 0, scaleX: 1.08, scaleY: 0.92, duration: 0.12, ease: "power2.in" }, 0)
+            .to(q("#bunWrap"), { y: -22, scaleX: 0.96, scaleY: 1.05, duration: 0.20, ease: "power2.out" }, 0.12)
+            .to(q("#bunWrap"), { y: 0, scaleX: 1.06, scaleY: 0.94, duration: 0.14, ease: "power2.in" }, 0.32)
+            .to(q("#bunWrap"), { y: -14, scaleX: 0.98, scaleY: 1.03, duration: 0.18, ease: "power2.out" }, 0.46)
+            .to(q("#bunWrap"), { y: 0, scaleX: 1.00, scaleY: 1.00, duration: 0.18, ease: "elastic.out(1,0.6)" }, 0.64);
+          // 星星微闪
+          stateTL
+            .to(q("#starL, #starR"), { scale: 1.06, duration: 0.25 }, 0.10)
+            .to(q("#starL, #starR"), { scale: 0.96, duration: 0.35 }, 0.35);
           break;
         }
         case "tired": {
-          gsap.set(eyeBlinkTargets, { scaleY: 0.25 });
-          gsap.set(eyeMoveTargets, { y: 3 });
+          // 疲惫：半眯眼 + 眼睛下垂 + 身体下沉
+          // 与 gsap_example.html 保持一致：直接在 eyeBlinkTargets 上设置 scaleY 和 y
+          gsap.set(eyeBlinkTargets, { scaleY: 0.25, y: 3 });
           gsap.set(q("#mouth"), { morphSVG: { shape: shapes.mouthFlat, shapeIndex: "auto" } });
           stateTL = gsap.timeline({ repeat: -1, yoyo: true, defaults: { ease: "sine.inOut" } })
             .to(q("#bunWrap"), { y: 6, scaleX: 1.015, scaleY: 0.985, duration: 1.2 }, 0)
@@ -1465,24 +1458,39 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
           break;
         }
         case "surprised": {
-          gsap.set(q("#mouth"), { morphSVG: { shape: shapes.mouthO, shapeIndex: "auto" }, fill: "url(#mouthGrad)", strokeWidth: 0 });
-          gsap.set(eyeBlinkTargets, { scaleY: 1.2 });
+          // 惊讶：O型嘴 + 眉毛上扬 + 身体轻微后仰
+          gsap.set(q("#brows"), { opacity: 1 });
+          stateTL = gsap.timeline({ defaults: { ease: "power2.out" } })
+            .to(q("#mouth"), {
+              morphSVG: { shape: shapes.mouthO, shapeIndex: "auto" },
+              fill: "url(#mouthGrad)",
+              strokeWidth: 0,
+              duration: 0.14
+            }, 0)
+            .to(q("#browL"), { y: -8, duration: 0.16 }, 0)
+            .to(q("#browR"), { y: -8, duration: 0.16 }, 0)
+            .to(q("#bunWrap"), { scaleX: 0.98, scaleY: 1.02, duration: 0.16 }, 0)
+            .to(q("#bunWrap"), { scaleX: 1.00, scaleY: 1.00, duration: 0.28, ease: "elastic.out(1,0.55)" }, 0.16);
           break;
         }
         case "sleepy": {
+          // 困：眯眼 + 脸下垂 + 缓慢呼吸循环
           gsap.set(eyeBlinkTargets, { scaleY: 0.18 });
           gsap.set(q("#mouth"), { morphSVG: { shape: shapes.mouthSleep, shapeIndex: "auto" } });
-          stateTL = gsap.timeline({ defaults: { ease: "sine.inOut" } })
-            .to(q("#face"), { y: 2, duration: 0.18 }, 0)
-            .to(q("#face"), { y: 5, duration: 0.8 }, 0.18)
-            .to(q("#face"), { y: 2, duration: 0.8 }, 0.98);
+          stateTL = gsap.timeline({ repeat: -1, yoyo: true, defaults: { ease: "sine.inOut" } })
+            .to(q("#face"), { y: 5, duration: 1.2 }, 0)
+            .to(q("#bunWrap"), { scaleX: 1.01, scaleY: 0.99, duration: 1.2 }, 0);
           break;
         }
         case "chew": {
-          gsap.set(q("#mouth"), { morphSVG: { shape: shapes.mouthO, shapeIndex: "auto" } });
-          stateTL = gsap.timeline({ repeat: -1, yoyo: true, defaults: { ease: "sine.inOut" } })
-            .to(q("#mouth"), { morphSVG: { shape: shapes.mouthSmile, shapeIndex: "auto" }, duration: 0.18 }, 0)
-            .to(q("#mouth"), { morphSVG: { shape: shapes.mouthO, shapeIndex: "auto" }, duration: 0.18 }, 0.18);
+          // 咀嚼：嘴巴开合 + 脸上下动 + 身体轻微起伏
+          stateTL = gsap.timeline({ repeat: -1, defaults: { ease: "sine.inOut" } })
+            .to(q("#face"), { y: 2, duration: 0.12 }, 0)
+            .to(q("#mouth"), { morphSVG: { shape: shapes.mouthSleep, shapeIndex: "auto" }, duration: 0.12 }, 0)
+            .to(q("#face"), { y: 0, duration: 0.12 }, 0.12)
+            .to(q("#mouth"), { morphSVG: { shape: shapes.mouthSmile, shapeIndex: "auto" }, duration: 0.12 }, 0.12)
+            .to(q("#bunWrap"), { scaleX: 1.015, scaleY: 0.985, duration: 0.24 }, 0)
+            .to(q("#bunWrap"), { scaleX: 1.0, scaleY: 1.0, duration: 0.24 }, 0.24);
           break;
         }
         default:
@@ -1490,8 +1498,9 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
       }
     };
 
+    // 完全按照 gsap_example.html 的设置
     gsap.set(q("#bunWrap"), { transformOrigin: "50% 80%", svgOrigin: "260 320" });
-    gsap.set(eyeBlinkTargets, { transformOrigin: "50% 50%", transformBox: "fill-box" });
+    gsap.set(eyeBlinkTargets, { transformOrigin: "50% 50%" });
     gsap.set(q("#mouth"), { transformOrigin: "50% 50%" });
     gsap.set(q("#face"), { transformOrigin: "50% 50%" });
     gsap.set(q("#drool"), { transformOrigin: "50% 0%" });
@@ -1523,487 +1532,19 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
 
   function triggerEatAnimation() {
     gsapStateRef.current?.playEat();
-    return;
-    // Legacy implementation (kept for reference; replaced by GSAP example state machine)
-    if (!petWrapperRef.current || !bodyLayerRef.current || !mouthLayerRef.current || !eyesLayerRef.current || !tailLayerRef.current) return;
-
-    const wrapper = petWrapperRef.current;
-    const body = bodyLayerRef.current;
-    const mouth = mouthLayerRef.current;
-    const eyes = eyesLayerRef.current;
-    const tail = tailLayerRef.current;
-    const pupils = eyes.querySelectorAll(".pet-pupil");
-    const bunPath = body.querySelector(".bun-shape") as SVGPathElement | null;
-    const mouthLine = mouth.querySelector(".mouth-line") as SVGPathElement | null;
-    const mouthOpen = mouth.querySelector(".mouth-open") as SVGPathElement | null;
-
-    // 安全防御：关键元素缺失则不执行动画
-    if (!bunPath || !mouthLine || !mouthOpen) {
-      return;
-    }
-
-    // 重置到静止状态（对应 swallow_gsap 的 resetAll）
-    const resetToInitial = () => {
-      gsap.set(wrapper, {
-        clearProps: "transform"
-      });
-      gsap.set(body, {
-        clearProps: "transform"
-      });
-      gsap.set(tail, {
-        rotation: 25
-      });
-
-      // 团子外形恢复为基础 path（不做 morph，只重置）
-      bunPath.setAttribute(
-        "d",
-        "M120 320 C120 245 190 175 260 176 C330 175 400 245 400 320 Q400 345 376 352 C330 368 190 368 144 352 Q120 345 120 320 Z"
-      );
-
-      // 嘴巴恢复为细线微笑
-      mouthLine.style.display = "";
-      mouthLine.setAttribute("d", "M220 275 Q260 295 300 275 Q260 286 220 275 Z");
-      mouthLine.setAttribute("stroke-width", "5");
-
-      mouthOpen.style.display = "none";
-      gsap.set(mouthOpen, { scaleX: 1, scaleY: 1, transformOrigin: "50% 50%" });
-
-      // 眼睛位置恢复
-      pupils.forEach((pupil) => {
-        const { x: currentX, y: currentY } = getPupilOffset(pupil);
-        setPupilOffset(pupil, currentX, currentY);
-      });
-    };
-
-    resetToInitial();
-
-    // GSAP 吞咽时间线（参考 examples/swallow_gsap.html，做简化版）
-    const tl = gsap.timeline({
-      defaults: { ease: "power2.inOut" }
-    });
-
-    // 0) 轻微蓄力：整体团子被压扁一点
-    tl.to(
-      wrapper,
-      {
-        scaleX: 1.04,
-        scaleY: 0.96,
-        duration: 0.12,
-        transformOrigin: "50% 80%"
-      },
-      0
-    );
-
-    // 1) 张嘴：脸微微下移 + 嘴从线条切换到大嘴洞
-    // 眼睛往下看一点，像在看要吃的东西
-    pupils.forEach((pupil) => {
-      const { x: currentX, y: currentY } = getPupilOffset(pupil);
-      const data = { y: currentY };
-      tl.to(
-        data,
-        {
-          y: currentY + 8,
-          duration: 0.16,
-          ease: "power2.out",
-          onUpdate: () => {
-            const y = data.y;
-            setPupilOffset(pupil, currentX, y);
-          }
-        },
-        0.04
-      );
-    });
-
-    // 切换到大嘴洞
-    tl.add(() => {
-      mouthLine.style.display = "none";
-      mouthOpen.style.display = "";
-    }, 0.04);
-
-    // 大嘴洞放大一点，像真正张开
-    tl.fromTo(
-      mouthOpen,
-      {
-        scaleX: 0.9,
-        scaleY: 0.9,
-        transformOrigin: "50% 50%"
-      },
-      {
-        scaleX: 1.05,
-        scaleY: 1.15,
-        duration: 0.18,
-        ease: "power2.out"
-      },
-      0.04
-    );
-
-    // 2) 吞咽：团子底部轻微鼓起 + 身体有一点点上下起伏
-    tl.to(
-      wrapper,
-      {
-        y: -4,
-        duration: 0.18,
-        ease: "power1.inOut"
-      },
-      0.22
-    );
-    tl.to(
-      wrapper,
-      {
-        y: 0,
-        duration: 0.24,
-        ease: "power1.out"
-      },
-      0.4
-    );
-
-    // 尾巴跟着轻轻摇一下
-    tl.to(
-      tail,
-      {
-        rotate: 30,
-        duration: 0.18,
-        ease: "sine.inOut"
-      },
-      0.22
-    ).to(
-      tail,
-      {
-        rotate: 22,
-        duration: 0.24,
-        ease: "sine.inOut"
-      },
-      0.4
-    );
-
-    // 3) 合嘴回微笑
-    tl.to(
-      mouthOpen,
-      {
-        scaleX: 0.9,
-        scaleY: 0.8,
-        duration: 0.14,
-        ease: "power2.inOut"
-      },
-      0.46
-    );
-
-    tl.add(() => {
-      mouthOpen.style.display = "none";
-      mouthLine.style.display = "";
-      mouthLine.setAttribute("stroke-width", "5");
-    }, 0.62);
-
-    // 身体回弹到原始状态
-    tl.to(
-      wrapper,
-      {
-        scaleX: 1,
-        scaleY: 1,
-        duration: 0.26,
-        ease: "elastic.out(1, 0.6)"
-      },
-      0.6
-    );
-
-    // 动画结束后再做一次轻微 reset，确保状态完全干净
-    tl.add(() => {
-      resetToInitial();
-    }, 0.95);
   }
 
   function triggerWaitingAnimation() {
-    console.log("triggerWaitingAnimation called");
     gsapStateRef.current?.setState("drool");
-    return;
-    if (!petWrapperRef.current || !bodyLayerRef.current || !mouthLayerRef.current || !eyesLayerRef.current || !tailLayerRef.current) {
-      console.log("Missing refs, cannot trigger animation");
-      return;
-    }
-    console.log("All refs available, starting animation");
-
-    const wrapper = petWrapperRef.current;
-    const body = bodyLayerRef.current;
-    const mouth = mouthLayerRef.current;
-    const eyes = eyesLayerRef.current;
-    const tail = tailLayerRef.current;
-    const pupils = eyes.querySelectorAll('.pet-pupil');
-    const mouthState = mouth as SVGGElement & {
-      __waitingMouthTween?: gsap.core.Tween | gsap.core.Timeline;
-      __waitingBodyTween?: gsap.core.Tween | gsap.core.Timeline;
-      __waitingEyeTweens?: gsap.core.Tween[];
-      __waitingTailTween?: gsap.core.Tween;
-      __waitingAnimation?: { pause: () => void };
-    };
-
-    if (mouthState.__waitingAnimation) {
-      try {
-        mouthState.__waitingAnimation.pause();
-      } catch (e) {
-        // 忽略错误
-      }
-      delete mouthState.__waitingAnimation;
-    }
-    mouthState.__waitingMouthTween?.kill();
-    mouthState.__waitingBodyTween?.kill();
-    mouthState.__waitingTailTween?.kill();
-    mouthState.__waitingEyeTweens?.forEach((tween) => tween.kill());
-
-    // 等待状态：嘴巴张开，眼睛期待地看着
-    // 眼睛稍微向下看（期待食物）
-    const eyeTweens: gsap.core.Tween[] = [];
-    pupils.forEach((pupil) => {
-      const { x: currentX, y: currentY } = getPupilOffset(pupil);
-      const target = { y: currentY };
-      const tween = gsap.to(target, {
-        y: 6,
-        duration: 0.3,
-        ease: "power2.out",
-        onUpdate: () => {
-          const y = target.y;
-          setPupilOffset(pupil, currentX, y);
-        }
-      });
-      eyeTweens.push(tween);
-    });
-    mouthState.__waitingEyeTweens = eyeTweens;
-
-    const mouthLine = mouth.querySelector('.mouth-line') as SVGPathElement | null;
-    const openPath = mouth.querySelector('.mouth-open') as SVGPathElement | null;
-
-    if (mouthLine) {
-      mouthLine.style.display = 'none';
-    }
-    if (openPath) {
-      openPath.style.display = '';
-      gsap.set(openPath, { scaleX: 1, scaleY: 1, transformOrigin: "50% 50%" });
-    }
-
-    if (openPath) {
-      const breathingTl = gsap.timeline({
-        repeat: -1,
-        yoyo: true,
-        defaults: { ease: "sine.inOut", duration: 0.7 }
-      });
-      breathingTl.to(wrapper, { scaleX: 1.05, scaleY: 0.95, transformOrigin: "50% 75%" }, 0);
-      breathingTl.to(eyes, { y: 4 }, 0);
-      breathingTl.to(mouth, { y: 6 }, 0);
-      breathingTl.to(openPath, { scaleX: 1.04, scaleY: 1.16, transformOrigin: "50% 50%" }, 0);
-
-      mouthState.__waitingMouthTween = breathingTl;
-      mouthState.__waitingBodyTween = breathingTl;
-      console.log("GSAP waiting animation started");
-    } else {
-      console.error("Failed to create or find open mouth path");
-    }
-
-    // 尾巴轻微摆动（期待的样子）
-    const tailTween = gsap.to(tail, {
-      rotate: 28,
-      duration: 0.9,
-      ease: "sine.inOut",
-      repeat: -1,
-      yoyo: true
-    });
-    mouthState.__waitingTailTween = tailTween;
   }
 
   function triggerExpressionAnimation(kind: "summarize" | "actions" | "remember") {
-    if (gsapStateRef.current) {
-      const stateMap = {
-        summarize: "think",
-        actions: "happy",
-        remember: "comfy"
-      } as const;
-      gsapStateRef.current.setState(stateMap[kind]);
-      return;
-    }
-    if (!petWrapperRef.current || !bodyLayerRef.current || !mouthLayerRef.current || !eyesLayerRef.current || !tailLayerRef.current) return;
-
-    const wrapper = petWrapperRef.current;
-    const body = bodyLayerRef.current;
-    const mouth = mouthLayerRef.current;
-    const eyes = eyesLayerRef.current;
-    const tail = tailLayerRef.current;
-    const pupils = eyes.querySelectorAll('.pet-pupil');
-
-    // 重置所有动画
-    const resetAll = () => {
-      // 确保 transform 完全重置，不使用 scale
-      wrapper.style.transform = "translateY(0px)";
-      animate(wrapper, {
-        rotate: 0,
-        translateX: 0,
-        translateY: 0,
-        duration: 0
-      });
-      animate(body, {
-        rotate: 0,
-        duration: 0
-      });
-      animate(mouth, {
-        scaleX: 1,
-        scaleY: 1,
-        translateX: 0,
-        translateY: 0,
-        duration: 0
-      });
-      // 确保嘴巴恢复为线条（隐藏大嘴洞，显示线条）
-      const mouthLine = mouth.querySelector('.mouth-line') as SVGPathElement | null;
-      const mouthOpen = mouth.querySelector('.mouth-open') as SVGPathElement | null;
-      if (mouthLine) {
-        mouthLine.style.display = '';
-      }
-      if (mouthOpen) {
-        mouthOpen.style.display = 'none';
-      }
-      animate(tail, {
-        rotate: 25,
-        duration: 0
-      });
-      pupils.forEach((pupil) => {
-        setPupilState(pupil, 0, 0, 1);
-      });
-    };
-
-    if (kind === "summarize") {
-      // 总结：思考表情 - 眼睛向上看，嘴巴稍微张开，身体轻微前倾
-      resetAll();
-      
-      // 眼睛向上看
-      pupils.forEach((pupil) => {
-        const { x: currentX, y: currentY } = getPupilOffset(pupil);
-        const target = { y: currentY };
-        animate(target, {
-          y: -6,
-          duration: 300,
-          ease: "outQuad",
-          update: () => {
-            const y = target.y;
-            setPupilOffset(pupil, currentX, y);
-          }
-        });
-      });
-
-      // 嘴巴稍微张开（思考状）
-      // 保持 translateX(-50%) 以确保居中（嘴巴宽度40px，-50% = -20px）
-      animate(mouth, {
-        scaleY: 1.3,
-        scaleX: 0.9,
-        translateX: 0,
-        translateY: -2,
-        duration: 300,
-        ease: "outQuad"
-      });
-
-      // 身体轻微前倾（不使用 scale，确保大小不变）
-      animate(wrapper, {
-        translateY: 3,
-        duration: 300,
-        ease: "outQuad"
-      });
-
-      // 尾巴轻微摆动
-      animate(tail, {
-        rotate: [25, 30, 20, 25],
-        duration: 800,
-        ease: "inOutQuad",
-        loop: true
-      });
-
-    } else if (kind === "actions") {
-      // 提取待办：专注表情 - 眼睛聚焦，身体稍微放大，嘴巴紧闭
-      resetAll();
-      
-      // 眼睛聚焦（瞳孔稍微放大）
-      pupils.forEach((pupil) => {
-        const { x: currentX, y: currentY } = getPupilOffset(pupil);
-        const target = { scale: 1 };
-        animate(target, {
-          scale: 1.15,
-          duration: 250,
-          ease: "outQuad",
-          update: () => {
-            setPupilState(pupil, currentX, currentY, target.scale);
-          }
-        });
-      });
-
-      // 嘴巴紧闭（专注状）
-      // 保持 translateX(-50%) 以确保居中（嘴巴宽度40px，-50% = -20px）
-      animate(mouth, {
-        scaleY: 0.7,
-        scaleX: 1.1,
-        translateX: 0,
-        translateY: 0,
-        duration: 250,
-        ease: "outQuad"
-      });
-
-      // 身体兴奋（不使用 scale，确保大小不变）
-      // 可以通过其他方式表达兴奋，比如轻微抖动
-      animate(wrapper, {
-        translateY: [0, 2, 0],
-        duration: 250,
-        ease: "outQuad"
-      });
-
-      // 尾巴快速摆动
-      animate(tail, {
-        rotate: [25, 35, 15, 25],
-        duration: 600,
-        ease: "inOutQuad",
-        loop: true
-      });
-
-    } else if (kind === "remember") {
-      // 记住：开心表情 - 眼睛眯起来，嘴巴微笑，身体轻微摇摆
-      resetAll();
-      
-      // 眼睛眯起来（向上移动并缩小）
-      pupils.forEach((pupil) => {
-        const { x: currentX, y: currentY } = getPupilOffset(pupil);
-        const target = { y: currentY, scale: 1 };
-        animate(target, {
-          y: -4,
-          scale: 0.85,
-          duration: 350,
-          ease: "outQuad",
-          update: () => {
-            setPupilState(pupil, currentX, target.y, target.scale);
-          }
-        });
-      });
-
-      // 眼睛整体缩小（眯眼效果）- 已通过瞳孔缩放处理
-
-      // 嘴巴微笑（向上弯曲）
-      // 保持 translateX(-50%) 以确保居中（嘴巴宽度40px，-50% = -20px）
-      animate(mouth, {
-        scaleY: 0.8,
-        scaleX: 1.2,
-        translateX: 0,
-        translateY: -3,
-        duration: 350,
-        ease: "outQuad"
-      });
-
-      // 身体开心摇摆（不使用 scale，确保大小不变）
-      animate(wrapper, {
-        rotate: [0, 3, -3, 0],
-        duration: 600,
-        ease: "inOutQuad",
-        loop: true
-      });
-
-      // 尾巴快速摆动
-      animate(tail, {
-        rotate: [25, 40, 10, 25],
-        duration: 500,
-        ease: "inOutQuad",
-        loop: true
-      });
-    }
+    const stateMap = {
+      summarize: "think",
+      actions: "happy",
+      remember: "comfy"
+    } as const;
+    gsapStateRef.current?.setState(stateMap[kind]);
   }
 
   function handleAction(kind: "summarize" | "actions" | "remember") {
@@ -2072,62 +1613,10 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
     
     // Only change state if we're currently in thinking state
     if (petState !== "thinking") {
-      console.log("handleStreamComplete called but petState is not thinking:", petState);
       return;
     }
-    
-    // 重置所有动画到初始状态
-    if (petWrapperRef.current && bodyLayerRef.current && mouthLayerRef.current && eyesLayerRef.current && tailLayerRef.current) {
-      const wrapper = petWrapperRef.current;
-      const body = bodyLayerRef.current;
-      const mouth = mouthLayerRef.current;
-      const eyes = eyesLayerRef.current;
-      const tail = tailLayerRef.current;
-      const pupils = eyes.querySelectorAll('.pet-pupil');
 
-      // 重置所有元素（不使用 scale，确保大小不变）
-      wrapper.style.transform = "translateY(0px)";
-      animate(wrapper, {
-        rotate: 0,
-        translateX: 0,
-        translateY: 0,
-        duration: 400,
-        ease: "outQuad"
-      });
-      animate(body, {
-        rotate: 0,
-        duration: 400,
-        ease: "outQuad"
-      });
-      animate(mouth, {
-        scaleX: 1,
-        scaleY: 1,
-        translateX: 0,
-        translateY: 0,
-        duration: 400,
-        ease: "outQuad"
-      });
-      animate(tail, {
-        rotate: 25,
-        duration: 400,
-        ease: "outQuad"
-      });
-      pupils.forEach((pupil) => {
-        const { x: currentX, y: currentY, scale } = getPupilState(pupil);
-        const target = { x: currentX, y: currentY, scale };
-        animate(target, {
-          x: 0,
-          y: 0,
-          scale: 1,
-          duration: 400,
-          ease: "outQuad",
-          update: () => {
-            setPupilState(pupil, target.x, target.y, target.scale);
-          }
-        });
-      });
-    }
-    
+    // GSAP 状态机会自动处理状态切换和动画重置
     setPetState("success_happy");
     successHappyTimeoutRef.current = window.setTimeout(() => {
       setPetState("idle_breathe");
@@ -2420,14 +1909,8 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
                   </g>
 
                   <g id="eyesCircle" className={`pet-layer eyes ${activeState}`} ref={eyesLayerRef}>
-                    <g id="eyeLWrap">
-                      <circle id="eyeL" cx="205" cy="230" r="10" fill="#584030" />
-                      <path id="eyeLidL" d="M195 230 Q205 230 215 230" fill="none" stroke="#584030" strokeWidth="8" strokeLinecap="round" opacity="0" />
-                    </g>
-                    <g id="eyeRWrap">
-                      <circle id="eyeR" cx="315" cy="230" r="10" fill="#584030" />
-                      <path id="eyeLidR" d="M305 230 Q315 230 325 230" fill="none" stroke="#584030" strokeWidth="8" strokeLinecap="round" opacity="0" />
-                    </g>
+                    <circle id="eyeL" cx="205" cy="230" r="10" fill="#584030" />
+                    <circle id="eyeR" cx="315" cy="230" r="10" fill="#584030" />
                   </g>
 
                   <g id="eyesCry" opacity="0">
