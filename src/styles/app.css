@@ -58,8 +58,9 @@ body,
 
 .pet-stage.panel-fallback .bubble-panel {
   left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
+  top: 10px;
+  --bubble-x: -50%;
+  --bubble-y: 0px;
   max-height: calc(var(--window-height, 320px) - 20px);
 }
 
@@ -423,10 +424,10 @@ body,
   position: absolute;
   /* 相对于 pet-stage 定位，确保与宠物位置相对固定 */
   left: calc(var(--pet-size) + var(--bubble-gap));
-  top: 50%;
+  top: 10px;
   width: min(220px, calc(var(--window-width, 720px) - var(--pet-size) - var(--bubble-gap) - 20px));
   min-width: 200px;
-  max-height: calc(var(--window-height, 320px) - 20px);
+  max-height: calc(var(--window-height, 320px) - 28px);
   background: var(--bubble-bg);
   border: 1px solid var(--bubble-border);
   border-radius: 12px;
@@ -437,7 +438,9 @@ body,
   gap: 8px;
   -webkit-app-region: no-drag;
   z-index: 3;
-  transform: translateY(-50%);
+  --bubble-x: 0px;
+  --bubble-y: 0px;
+  transform: translateX(var(--bubble-x)) translateY(var(--bubble-y));
   animation: bubble-in 0.25s ease-out;
   transition: left 0.3s ease-out, width 0.3s ease-out;
   overflow: hidden;
@@ -461,7 +464,7 @@ body,
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: 12px;
+  font-size: 11px;
   color: #2d2a26;
 }
 
@@ -473,7 +476,7 @@ body,
 }
 
 .bubble-meta {
-  font-size: 11px;
+  font-size: 10px;
   color: rgba(60, 60, 60, 0.6);
 }
 
@@ -488,7 +491,7 @@ body,
   background: white;
   padding: 6px 8px;
   border-radius: 8px;
-  font-size: 12px;
+  font-size: 11px;
   cursor: pointer;
   text-align: left;
   -webkit-app-region: no-drag;
@@ -502,7 +505,7 @@ body,
   background: rgba(255, 248, 238, 0.9);
   border-radius: 8px;
   padding: 8px;
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.4;
   position: relative;
   overflow-y: auto;
@@ -655,11 +658,11 @@ body,
 @keyframes bubble-in {
   0% {
     opacity: 0;
-    transform: translateY(-50%) translateX(-6px);
+    transform: translateX(var(--bubble-x)) translateY(calc(var(--bubble-y) - 6px));
   }
   100% {
     opacity: 1;
-    transform: translateY(-50%) translateX(0);
+    transform: translateX(var(--bubble-x)) translateY(var(--bubble-y));
   }
 }
 
@@ -668,7 +671,8 @@ body,
     left: 50%;
     top: auto;
     bottom: 20px;
-    transform: translateX(-50%);
+    --bubble-x: -50%;
+    --bubble-y: 0px;
   }
 }
 
@@ -726,6 +730,25 @@ body,
 .settings-panel {
   width: min(280px, calc(var(--window-width, 720px) - var(--pet-size) - var(--bubble-gap) - 20px));
   min-width: 250px;
+  top: 10px;
+  transform: none;
+}
+
+.file-panel {
+  width: min(300px, calc(var(--window-width, 720px) - var(--pet-size) - var(--bubble-gap) - 20px));
+  min-width: 280px;
+}
+
+.file-panel .bubble-output {
+  max-height: 230px;
+}
+
+.file-panel-expanded {
+  min-height: 280px;
+}
+
+.file-panel-expanded .bubble-output {
+  min-height: 120px;
 }
 
 .close-button {
@@ -786,7 +809,7 @@ body,
 }
 
 .settings-label {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 500;
   color: #2d2a26;
 }
@@ -795,7 +818,7 @@ body,
   padding: 8px 10px;
   border: 1px solid rgba(0, 0, 0, 0.15);
   border-radius: 6px;
-  font-size: 12px;
+  font-size: 11px;
   background: white;
   color: #2d2a26;
   -webkit-app-region: no-drag;
@@ -814,7 +837,7 @@ body,
 }
 
 .settings-hint {
-  font-size: 10px;
+  font-size: 9px;
   color: rgba(60, 60, 60, 0.6);
   margin-top: -2px;
 }
@@ -824,7 +847,7 @@ body,
   background: var(--accent);
   border: 1px solid var(--accent-strong);
   border-radius: 6px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
   color: #2d2a26;
   cursor: pointer;
@@ -844,12 +867,8 @@ body,
 .chat-dialog {
   width: min(300px, calc(var(--window-width, 720px) - var(--pet-size) - var(--bubble-gap) - 20px));
   min-width: 280px;
-  max-height: calc(var(--window-height, 320px) - 40px);
-  /* Ensure panel stays within window bounds */
-  top: 50%;
-  transform: translateY(-50%);
-  /* Prevent overflow at top */
-  margin-top: 0;
+  max-height: calc(var(--window-height, 320px) - 28px);
+  /* Match file panel positioning/animation */
 }
 
 .chat-content {
@@ -857,7 +876,7 @@ body,
   flex-direction: column;
   gap: 12px;
   padding-top: 8px;
-  max-height: calc(var(--window-height, 320px) - 100px);
+  max-height: calc(var(--window-height, 320px) - 120px);
   min-height: 0;
   overflow: hidden;
   /* Ensure content doesn't push panel beyond window */
@@ -917,7 +936,7 @@ body,
   padding: 8px 10px;
   border: 1px solid rgba(0, 0, 0, 0.15);
   border-radius: 6px;
-  font-size: 12px;
+  font-size: 11px;
   background: white;
   color: #2d2a26;
   -webkit-app-region: no-drag;
@@ -989,7 +1008,7 @@ body,
   border-radius: 4px;
   cursor: pointer;
   -webkit-app-region: no-drag;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 500;
   color: #2d2a26;
   transition: background 0.2s;
@@ -1009,11 +1028,13 @@ body,
   padding: 8px;
   background: rgba(255, 248, 238, 0.3);
   border-radius: 4px;
-  height: 180px;
+  height: 150px;
   overflow-y: auto;
   overflow-x: hidden;
   box-sizing: border-box;
   position: relative;
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .chat-result-content::-webkit-scrollbar {
@@ -1038,6 +1059,6 @@ body,
   text-align: center;
   padding: 8px;
   color: rgba(60, 60, 60, 0.6);
-  font-size: 11px;
+  font-size: 10px;
   font-style: italic;
 }

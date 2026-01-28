@@ -81,8 +81,8 @@ const LLM_MODELS = {
   openai: ["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo"],
   anthropic: ["claude-3-haiku-20240307", "claude-3-sonnet-20240229", "claude-3-opus-20240229"]
 };
-const WINDOW_COLLAPSED = { width: 320, height: 320 };
-const WINDOW_EXPANDED = { width: 720, height: 320 }; // Width expanded for panel, height stays 320
+const WINDOW_COLLAPSED = { width: 320, height: 360 };
+const WINDOW_EXPANDED = { width: 720, height: 460 }; // Taller to keep chat panel fully within window
 
 function getRandomBlinkDelay() {
   return Math.floor(
@@ -1967,7 +1967,11 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
           </div>
         )}
         {panelVisible && (
-          <div className={`bubble-panel`} ref={panelRef} data-no-drag>
+          <div
+            className={`bubble-panel file-panel ${panelMode ? "file-panel-expanded" : ""}`}
+            ref={panelRef}
+            data-no-drag
+          >
             <div className="bubble-header">
               <span>File received</span>
               {dropRecord && (
