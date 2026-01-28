@@ -77,15 +77,12 @@ body,
   left: 0 !important;
   top: 0 !important;
 
-  /* ✅ 团子/布丁形外轮廓（上圆下宽，对称，稳定） */
-  border-radius: 52% 52% 44% 44% / 38% 38% 62% 62%;
-
-  border: 2px solid transparent;
+  border-radius: 0;
+  border: none;
   cursor: grab;
   user-select: none;
 
-  /* 默认使用裁剪保证是完整团子形状 */
-  overflow: hidden;
+  overflow: visible;
 
   z-index: 2;
   box-sizing: border-box;
@@ -209,8 +206,7 @@ body,
   top: 0 !important;
   border: none;
   will-change: transform;
-  /* 添加期待的光晕效果 */
-  box-shadow: 0 0 15px rgba(255, 215, 0, 0.3);
+  box-shadow: none;
 }
 
 .pet-layer {
@@ -248,8 +244,7 @@ body,
   stroke: transparent;
   stroke-width: 0;
   transition: stroke 0.2s ease, stroke-width 0.2s ease;
-  transform-origin: 50% 50%;
-  transform: translateY(8px) scaleY(0.9);
+  transform: none;
 }
 
 .state-idle_breathe .pet-layer.body {
@@ -279,6 +274,7 @@ body,
 
 .state-waiting_for_drop .pet-layer.body {
   background-color: transparent; /* 奶油白色 */
+  filter: none;
 }
 
 .pet-layer.tail {
@@ -287,134 +283,32 @@ body,
 }
 
 .pet-layer.eyes {
-  inset: 35% 25% auto 25%; /* 调整位置，让眼睛更靠近中心 */
-  height: auto;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  position: absolute;
-  gap: 8px; /* 眼睛之间的小间距 */
   pointer-events: none;
-  width: 50%; /* 更窄的宽度，眼睛更靠近 */
-  z-index: 3;
 }
 
 .pet-eye {
-  /* 极简风格：不需要白色背景，只需要小圆点 */
-  width: 12px; /* 小的圆形点 */
-  height: 12px;
-  min-width: 12px;
-  min-height: 12px;
-  background: transparent !important; /* 透明背景 */
-  border-radius: 50%;
-  position: relative;
-  flex-shrink: 0;
-  display: flex !important;
-  align-items: center;
-  justify-content: center;
-  overflow: visible; /* 允许溢出，显示小点 */
-  opacity: 1 !important;
-  visibility: visible !important;
-  /* 移除阴影 */
-}
-
-.pet-eye-left {
-  order: 1;
-}
-
-.pet-eye-right {
-  order: 2;
+  transform-box: fill-box;
+  transform-origin: center;
 }
 
 .pet-pupil {
-  position: absolute;
-  width: 12px; /* 小的深棕色圆点 */
-  height: 12px;
-  background: #5C4033; /* 深棕色 */
-  border-radius: 50%;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  transition: transform 0.05s linear;
   pointer-events: none;
-  will-change: transform;
-  /* 极简风格，移除高光 */
 }
 .pet-pupil::after {
   display: none; /* 移除高光 */
 }
 
-.state-idle_blink .pet-eye {
-  transform: scaleY(0.2);
-}
 
 
 .pet-layer.mouth {
-  position: absolute;
-  top: 65%;
-  left: 50%;
-  transform: translateX(-50%);
-  transform-origin: center center;
-  height: 8px;
-  width: 40px;
-  background: transparent !important;
-  border: none !important;
-  overflow: visible;
-  /* 提升嘴巴层级，确保不会被身体遮挡 */
-  z-index: 4;
-  opacity: 1 !important;
-  visibility: visible !important;
-  display: block !important;
-  box-shadow: none;
-  /* 初始化 CSS 变量 */
-  --mouth-width: 40px;
-  --mouth-stroke-width: 3px;
-  --mouth-curve: 2px; /* 控制弯曲程度，值越小越弯曲 */
-}
-
-.pet-layer.mouth svg {
-  width: var(--mouth-width, 40px);
-  height: var(--mouth-height, 8px);
-  position: absolute;
-  top: 0;
-  left: 50%;
-  transform: translateX(-50%);
-}
-
-.state-waiting_for_drop .pet-layer.mouth {
-  width: 100px !important;
-  height: 30px !important;
-  /* 确保容器仍然居中 */
-  left: 50% !important;
-  transform: translateX(-50%) !important;
-}
-
-.state-waiting_for_drop .pet-layer.mouth svg {
-  width: 100px !important;
-  height: 30px !important;
-  /* 确保SVG也居中 */
-  left: 50% !important;
-  transform: translateX(-50%) !important;
-}
-
-.pet-layer.mouth svg path {
-  stroke: #5C4033;
-  stroke-width: var(--mouth-stroke-width, 3);
-  fill: none;
-  stroke-linecap: round;
+  pointer-events: none;
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
 }
 
 
 .state-eat_chomp .pet-layer.mouth {
-  /* 咀嚼时嘴巴可以稍微张开，但保持简单线条风格 */
-  border-bottom-width: 5px; /* 稍微粗一点表示张开 */
-  width: 45px; /* 稍微宽一点 */
-  /* transform 由 JavaScript 动画控制 */
   will-change: transform;
-}
-
-.state-thinking .pet-layer.mouth {
-  transform: translateY(-4px) scaleX(0.6);
 }
 
 .pet-drag-hint {
@@ -778,30 +672,7 @@ body,
   }
 }
 
-/* ===== 强制团子轮廓：更明显 + 轮廓直接画在 wrapper 上 ===== */
-.pet-wrapper {
-  /* 让轮廓可见：背景放在 wrapper 上 */
-  background: #FFF8E7 !important;
-
-  /* 更明显的团子（底部更平、两侧更鼓） */
-  /* border-radius: 60% 60% 52% 52% / 78% 78% 28% 28% !important; */
-  border-radius: 62% 62% 56% 56% / 86% 86% 18% 18% !important;
-
-  overflow: hidden !important;
-  
-}
-
-/* body 只当“占位层”，不要自己再画背景（避免视觉混乱） */
-.pet-layer.body {
-  background: transparent !important;
-  background-image: none !important;
-  border-radius: inherit !important;
-}
-
-/* 吃的虚线圈也跟随团子形（你现在这里还是 50% 圆） */
-.state-eat_chomp .pet-wrapper::after {
-  border-radius: inherit !important;
-}
+/* (removed) duplicate pet-wrapper overrides that forced a squarish mask */
 
 /* Conversation Bubble */
 .conversation-bubble {

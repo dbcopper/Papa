@@ -1,0 +1,639 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Dango States (GSAP + MorphSVG)</title>
+  <style>
+    body { margin:0; background:#1f1f1f; display:grid; place-items:center; min-height:100vh; font-family:system-ui; color:#fff; }
+    .panel { display:grid; gap:12px; justify-items:center; padding:20px; }
+    .btns { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; }
+    button {
+      padding:10px 12px; border-radius:12px; border:1px solid rgba(255,255,255,.16);
+      background:rgba(255,255,255,.06); color:#fff; cursor:pointer;
+    }
+    button:active { transform: translateY(1px); }
+    svg { width: 460px; height: 380px; border-radius:16px; }
+    .tip { font-size:12px; opacity:.75; text-align:center; line-height:1.5; max-width:560px; }
+  </style>
+</head>
+<body>
+  <div class="panel">
+    <div class="btns">
+      <button data-state="idle">Idle</button>
+      <button data-state="think">思考</button>
+      <button data-state="happy">开心</button>
+      <button data-state="comfy">舒服</button>
+
+      <!-- 新增 -->
+      <button data-state="shy">害羞</button>
+      <button data-state="cry">哭哭</button>
+      <button data-state="drool">流口水</button>
+      <button data-state="excited">兴奋跳跳</button>
+      <button data-state="tired">疲惫</button>
+
+      <!-- 其他保持不变 -->
+      <button data-state="angry">生气</button>
+      <button data-state="surprised">惊讶</button>
+      <button data-state="sleepy">困</button>
+      <button data-state="chew">咀嚼</button>
+      <button id="eatBtn">吞（动作）</button>
+    </div>
+
+    <div class="tip">
+      ✅ 在你原来的基础上新增：害羞 / 哭哭 / 流口水 / 兴奋跳跳 / 疲惫。<br/>
+      其他状态（思考、开心、舒服、生气、惊讶、困、咀嚼、吞）逻辑保持原样。
+    </div>
+
+    <svg viewBox="0 0 520 420">
+      <defs>
+        <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+          <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#000" flood-opacity="0.22"/>
+        </filter>
+
+        <!-- 体内裁剪 -->
+        <clipPath id="bunClip">
+          <use href="#bun"/>
+        </clipPath>
+
+        <!-- 口腔渐变（张嘴时更有“深度”） -->
+        <radialGradient id="mouthGrad" cx="50%" cy="35%" r="70%">
+          <stop offset="0%" stop-color="#6b3e1f"/>
+          <stop offset="60%" stop-color="#4b2a14"/>
+          <stop offset="100%" stop-color="#351e10"/>
+        </radialGradient>
+      </defs>
+
+      <!-- 团子整体 -->
+      <g id="bunWrap" filter="url(#shadow)">
+        <!-- 外轮廓（morph） -->
+        <path id="bun"
+          fill="#f8f8e0"
+          d="M130 318
+             C130 205 190 130 260 130
+             C330 130 390 205 390 318
+             Q390 335 372 340
+             C330 350 190 350 148 340
+             Q130 335 130 318 Z" />
+
+        <!-- 思考省略号（已加过） -->
+        <g id="thought" opacity="0">
+          <circle id="dot1" cx="236" cy="112" r="5" fill="#ffffff" opacity="0.95"/>
+          <circle id="dot2" cx="260" cy="106" r="5" fill="#ffffff" opacity="0.95"/>
+          <circle id="dot3" cx="284" cy="112" r="5" fill="#ffffff" opacity="0.95"/>
+        </g>
+
+        <!-- 脸 -->
+        <g id="face">
+          <!-- 害羞脸红（新增） -->
+          <g id="blush" opacity="0">
+            <circle id="blushL" cx="170" cy="275" r="18" fill="#ff8fa3" opacity="0.55"/>
+            <circle id="blushR" cx="350" cy="275" r="18" fill="#ff8fa3" opacity="0.55"/>
+          </g>
+
+          <!-- 眼睛：默认圆眼（保留） -->
+          <g id="eyesCircle">
+            <circle id="eyeL" cx="205" cy="230" r="10" fill="#584030"/>
+            <circle id="eyeR" cx="315" cy="230" r="10" fill="#584030"/>
+          </g>
+
+          <!-- 哭哭眼（倒八 / >< 风格，新增） -->
+          <g id="eyesCry" opacity="0">
+            <path id="cryEyeL" d="M193 232 Q205 246 217 232" fill="none" stroke="#584030" stroke-width="8" stroke-linecap="round"/>
+            <path id="cryEyeR" d="M303 232 Q315 246 327 232" fill="none" stroke="#584030" stroke-width="8" stroke-linecap="round"/>
+          </g>
+
+          <!-- 星星眼（新增） -->
+          <g id="eyesStar" opacity="0">
+            <polygon id="starL" points="205,216 210,226 221,227 213,234 216,245 205,239 194,245 197,234 189,227 200,226"
+                     fill="#ffd86b" stroke="#584030" stroke-width="3" stroke-linejoin="round"/>
+            <polygon id="starR" points="315,216 320,226 331,227 323,234 326,245 315,239 304,245 307,234 299,227 310,226"
+                     fill="#ffd86b" stroke="#584030" stroke-width="3" stroke-linejoin="round"/>
+          </g>
+
+          <!-- 眉毛（原来就有） -->
+          <g id="brows" opacity="0">
+            <path id="browL" d="M185 208 Q205 198 225 208" fill="none" stroke="#584030" stroke-width="6" stroke-linecap="round"/>
+            <path id="browR" d="M295 208 Q315 198 335 208" fill="none" stroke="#584030" stroke-width="6" stroke-linecap="round"/>
+          </g>
+
+          <!-- 嘴（原来就有） -->
+          <path id="mouth"
+            d="M220 275
+               Q260 295 300 275
+               Q260 286 220 275 Z"
+            fill="none" stroke="#584030" stroke-width="10"
+            stroke-linejoin="round" />
+
+          <!-- 流口水液滴（新增，默认隐藏） -->
+          <path id="drool"
+            d="M304 282
+               C312 284 316 292 314 300
+               C312 308 306 312 304 316
+               C302 312 296 308 294 300
+               C292 292 296 284 304 282 Z"
+            fill="#9ad6ff" opacity="0" />
+
+          <!-- 泪滴（新增，默认隐藏） -->
+          <g id="tears" opacity="0">
+            <path id="tearL"
+              d="M208 246
+                 C216 258 214 268 208 276
+                 C202 268 200 258 208 246 Z"
+              fill="#9ad6ff" opacity="0.85"/>
+            <path id="tearR"
+              d="M318 246
+                 C326 258 324 268 318 276
+                 C312 268 310 258 318 246 Z"
+              fill="#9ad6ff" opacity="0.85"/>
+          </g>
+
+          <!-- 体内鼓包（吞咽时出现，原来就有） -->
+          <ellipse id="bolus"
+            cx="260" cy="285" rx="0" ry="0"
+            fill="#e8d9b6" opacity="0"
+            clip-path="url(#bunClip)"/>
+        </g>
+      </g>
+
+      <!-- 被吞的“扁平团子/糖块”（原来就有） -->
+      <path id="food"
+        d="M260 90
+           C278 92 292 104 290 122
+           C288 140 273 150 260 152
+           C247 150 232 140 230 122
+           C228 104 242 92 260 90 Z"
+        fill="#9ad6ff" stroke="#6bbcf6" stroke-width="4"
+        stroke-linejoin="round"/>
+
+      <!-- ===== 关键帧（隐藏） ===== -->
+
+      <path id="mouthSmile" style="visibility:hidden"
+        d="M220 275 Q260 295 300 275 Q260 286 220 275 Z"/>
+
+      <path id="mouthOpen" style="visibility:hidden"
+        d="M200 270
+           C200 240 230 220 260 220
+           C290 220 320 240 320 270
+           C320 305 295 325 260 325
+           C225 325 200 305 200 270 Z"/>
+
+      <path id="mouthO" style="visibility:hidden"
+        d="M238 278
+           C238 260 248 248 260 248
+           C272 248 282 260 282 278
+           C282 296 272 308 260 308
+           C248 308 238 296 238 278 Z"/>
+
+      <path id="mouthSleep" style="visibility:hidden"
+        d="M230 285
+           Q260 300 290 285
+           Q260 290 230 285 Z"/>
+
+      <path id="mouthAngry" style="visibility:hidden"
+        d="M230 292
+           Q260 268 290 292
+           Q260 286 230 292 Z"/>
+
+      <path id="mouthThink" style="visibility:hidden"
+        d="M236 286
+           Q260 292 284 286
+           Q260 288 236 286 Z"/>
+
+      <!-- 新增：哭哭嘴（更委屈一点） -->
+      <path id="mouthCry" style="visibility:hidden"
+        d="M232 296
+           Q260 270 288 296
+           Q260 292 232 296 Z"/>
+
+      <!-- 新增：疲惫嘴（更平更短） -->
+      <path id="mouthFlat" style="visibility:hidden"
+        d="M238 288
+           Q260 288 282 288
+           Q260 288 238 288 Z"/>
+
+      <path id="bunOpen" style="visibility:hidden"
+        d="M122 318
+           C122 220 188 150 260 152
+           C332 150 398 220 398 318
+           Q398 340 376 346
+           C330 360 190 360 144 346
+           Q122 340 122 318 Z"/>
+
+      <path id="bunBulge" style="visibility:hidden"
+        d="M130 318
+           C125 200 190 130 260 130
+           C330 130 395 200 390 318
+           Q390 350 372 366
+           C330 392 190 392 148 366
+           Q130 350 130 318 Z"/>
+
+      <path id="foodSquish" style="visibility:hidden"
+        d="M260 108
+           C290 108 308 114 308 122
+           C308 130 290 136 260 136
+           C230 136 212 130 212 122
+           C212 114 230 108 260 108 Z"/>
+    </svg>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/MorphSVGPlugin.min.js"></script>
+
+  <script>
+    gsap.registerPlugin(MorphSVGPlugin);
+
+    // ---------- 基础设置 ----------
+    gsap.set("#bunWrap", { transformOrigin: "50% 80%", svgOrigin: "260 320" });
+    gsap.set(["#eyeL","#eyeR"], { transformOrigin: "50% 50%" });
+    gsap.set("#mouth", { transformOrigin: "50% 50%" });
+    gsap.set("#face", { transformOrigin: "50% 50%" });
+    gsap.set("#drool", { transformOrigin: "50% 0%" });
+    gsap.set(["#tearL","#tearR"], { transformOrigin: "50% 0%" });
+
+    let stateTL = null;     // 当前“状态”动画（可替换）
+    let idleTL = null;      // idle 的循环
+    let blinkTL = null;     // 眨眼循环
+    let actionTL = null;    // 一次性动作（吞咽）
+
+    function killTL(tl) { if (tl) tl.kill(); return null; }
+
+    function resetToNeutral() {
+      stateTL = killTL(stateTL);
+      actionTL = killTL(actionTL);
+
+      gsap.set("#bun", { morphSVG: { shape: "M130 318 C130 205 190 130 260 130 C330 130 390 205 390 318 Q390 335 372 340 C330 350 190 350 148 340 Q130 335 130 318 Z", shapeIndex:"auto" }});
+      gsap.set("#bunWrap", { scaleX: 1, scaleY: 1, rotation: 0, x: 0, y: 0 });
+
+      gsap.set("#face", { x:0, y:0, rotation:0 });
+      gsap.set("#brows", { opacity: 0 });
+      gsap.set(["#browL","#browR"], { rotation:0, y:0, transformOrigin:"50% 50%" });
+
+      // 眼睛：默认圆眼显示，其他隐藏
+      gsap.set("#eyesCircle", { opacity: 1 });
+      gsap.set("#eyesCry", { opacity: 0 });
+      gsap.set("#eyesStar", { opacity: 0 });
+      gsap.set(["#eyeL","#eyeR"], { scaleY: 1, y:0, x:0 });
+
+      // 嘴回微笑线
+      gsap.set("#mouth", {
+        morphSVG: { shape: "#mouthSmile", shapeIndex: "auto" },
+        fill: "none",
+        stroke: "#584030",
+        strokeWidth: 10
+      });
+
+      // 附加道具隐藏
+      gsap.set("#blush", { opacity: 0, scale: 1, transformOrigin: "50% 50%" });
+      gsap.set("#drool", { opacity: 0, scaleY: 0.2, y: 0 });
+      gsap.set("#tears", { opacity: 0 });
+      gsap.set(["#tearL","#tearR"], { y: 0, opacity: 0.85 });
+
+      // 思考省略号隐藏
+      gsap.set("#thought", { opacity: 0, y: 0 });
+      gsap.set(["#dot1","#dot2","#dot3"], { scale: 1, y: 0, opacity: 0.95 });
+
+      // 吞咽鼓包隐藏
+      gsap.set("#bolus", { attr: { rx: 0, ry: 0, cy: 285 }, opacity: 0 });
+
+      // 食物回位（默认隐藏，吞咽动作会用）
+      gsap.set("#food", { x:0, y:0, scale:1, opacity:0, transformOrigin:"50% 50%" });
+      gsap.set("#food", { morphSVG: null });
+    }
+
+    // ---------- Idle（呼吸）+ Blink（眨眼） ----------
+    function startIdleLoops() {
+      idleTL = killTL(idleTL);
+      idleTL = gsap.timeline({ repeat: -1, defaults: { ease:"sine.inOut" } })
+        .to("#bunWrap", { scaleX: 1.02, scaleY: 0.98, duration: 1.2 }, 0)
+        .to("#bunWrap", { scaleX: 1.00, scaleY: 1.00, duration: 1.2 }, 1.2)
+        .to("#face", { y: 1.5, duration: 1.2 }, 0)
+        .to("#face", { y: 0, duration: 1.2 }, 1.2);
+
+      blinkTL = killTL(blinkTL);
+      function randomBlink() {
+        const d = gsap.utils.random(1.6, 3.6);
+        blinkTL = gsap.timeline({
+          repeat: 1,
+          repeatDelay: d,
+          onComplete: () => randomBlink()
+        })
+        .to(["#eyeL","#eyeR"], { scaleY: 0.1, duration: 0.06, ease:"power1.in" })
+        .to(["#eyeL","#eyeR"], { scaleY: 1.0, duration: 0.10, ease:"power1.out" });
+      }
+      randomBlink();
+    }
+
+    // ---------- 状态：原有 + 新增 ----------
+    const States = {
+      idle() {
+        resetToNeutral();
+      },
+
+      // 思考（保持你之前那版）
+      think() {
+        resetToNeutral();
+        gsap.set("#brows", { opacity: 1 });
+        stateTL = gsap.timeline({ repeat: -1, defaults:{ ease:"sine.inOut" } });
+
+        stateTL
+          .to("#face", { rotation: -1.5, y: 1.2, duration: 0.5 }, 0)
+          .to("#face", { rotation:  1.0, y: 0.2, duration: 0.6 }, 0.5)
+          .to("#face", { rotation: -1.5, y: 1.2, duration: 0.6 }, 1.1);
+
+        stateTL
+          .to(["#eyeL","#eyeR"], { x: 5, y: -1, duration: 0.35 }, 0)
+          .to(["#eyeL","#eyeR"], { x: 2, y:  0, duration: 0.55 }, 0.35)
+          .to(["#eyeL","#eyeR"], { x: 5, y: -1, duration: 0.55 }, 0.90);
+
+        stateTL
+          .to("#browL", { y: -6, rotation: -10, duration: 0.45 }, 0)
+          .to("#browL", { y: -3, rotation:  -6, duration: 0.55 }, 0.45)
+          .to("#browL", { y: -6, rotation: -10, duration: 0.55 }, 1.0);
+
+        stateTL.to("#mouth", { morphSVG:{ shape:"#mouthThink", shapeIndex:"auto" }, duration: 0.18 }, 0);
+        stateTL.to("#thought", { opacity: 1, duration: 0.18 }, 0);
+
+        stateTL
+          .to("#dot1", { y: -5, scale: 1.1, duration: 0.25 }, 0.15)
+          .to("#dot1", { y:  0, scale: 1.0, duration: 0.35 }, 0.40)
+          .to("#dot2", { y: -6, scale: 1.12, duration: 0.25 }, 0.35)
+          .to("#dot2", { y:  0, scale: 1.0, duration: 0.35 }, 0.60)
+          .to("#dot3", { y: -5, scale: 1.1, duration: 0.25 }, 0.55)
+          .to("#dot3", { y:  0, scale: 1.0, duration: 0.35 }, 0.80);
+      },
+
+      // 开心（保持不变）
+      happy() {
+        resetToNeutral();
+        stateTL = gsap.timeline({ defaults:{ ease:"sine.inOut" } })
+          .to("#bunWrap", { scaleX: 1.03, scaleY: 0.97, duration: 0.18 }, 0)
+          .to("#face", { y: -2, duration: 0.18 }, 0)
+          .to("#mouth", { morphSVG:{ shape:"#mouthSmile", shapeIndex:"auto" }, duration: 0.14 }, 0)
+          .to(["#eyeL","#eyeR"], { y: 2, duration: 0.18 }, 0)
+          .to("#bunWrap", { scaleX: 1.00, scaleY: 1.00, duration: 0.28, ease:"elastic.out(1,0.55)" }, 0.18);
+      },
+
+      // 舒服（保持不变）
+      comfy() {
+        resetToNeutral();
+        stateTL = gsap.timeline({ repeat: -1, yoyo: true, defaults:{ ease:"sine.inOut" } });
+
+        gsap.set(["#eyeL","#eyeR"], { scaleY: 0.20 });
+        gsap.set("#mouth", { morphSVG:{ shape:"#mouthSmile", shapeIndex:"auto" } });
+        gsap.set("#face", { y: 1 });
+
+        stateTL
+          .to("#bunWrap", { scaleX: 1.015, scaleY: 0.985, duration: 1.4 }, 0)
+          .to("#face", { y: 2.0, duration: 1.4 }, 0)
+          .to("#face", { rotation: -1.0, duration: 1.4 }, 0)
+          .to("#bunWrap", { scaleX: 1.0, scaleY: 1.0, duration: 1.4 }, 1.4)
+          .to("#face", { y: 1.0, duration: 1.4 }, 1.4)
+          .to("#face", { rotation: 1.0, duration: 1.4 }, 1.4);
+      },
+
+      // ✅ 新增：害羞（脸红 + 眼睛左右躲）
+      shy() {
+        resetToNeutral();
+        gsap.set("#blush", { opacity: 0.8, scale: 0.95 });
+
+        stateTL = gsap.timeline({ repeat: -1, yoyo: true, defaults:{ ease:"sine.inOut" } });
+
+        // 脸红轻轻呼吸
+        stateTL.to("#blush", { opacity: 0.95, scale: 1.05, duration: 0.8 }, 0);
+
+        // 眼睛左右躲（小幅）
+        stateTL
+          .to(["#eyeL","#eyeR"], { x: 7, y: 0, duration: 0.45 }, 0)
+          .to(["#eyeL","#eyeR"], { x: -6, y: 0, duration: 0.55 }, 0.45);
+
+        // 轻轻歪头
+        stateTL
+          .to("#face", { rotation: -2.2, y: 1.5, duration: 0.8 }, 0)
+          .to("#face", { rotation:  1.4, y: 0.5, duration: 0.8 }, 0.8);
+
+        stateTL.to("#mouth", { morphSVG:{ shape:"#mouthSmile", shapeIndex:"auto" }, duration: 0.2 }, 0);
+      },
+
+      // ✅ 新增：哭哭（倒八眼 + 泪滴抖动/掉落）
+      cry() {
+        resetToNeutral();
+
+        // 切换眼睛样式
+        gsap.set("#eyesCircle", { opacity: 0 });
+        gsap.set("#eyesCry", { opacity: 1 });
+
+        // 嘴更委屈
+        gsap.set("#mouth", { morphSVG:{ shape:"#mouthCry", shapeIndex:"auto" } });
+
+        // 显示泪滴
+        gsap.set("#tears", { opacity: 1 });
+
+        stateTL = gsap.timeline({ repeat: -1, defaults:{ ease:"sine.inOut" } });
+
+        // 小抖（哭唧唧）
+        stateTL
+          .to("#face", { x: 1.2, duration: 0.08 }, 0)
+          .to("#face", { x: -1.2, duration: 0.08, repeat: 3, yoyo: true }, 0.08)
+          .to("#face", { x: 0, duration: 0.10 }, 0.40);
+
+        // 泪滴循环：下落 + 淡出 + 回位
+        stateTL
+          .fromTo("#tearL", { y: 0, opacity: 0.9 }, { y: 18, opacity: 0.05, duration: 0.55, ease:"power2.in" }, 0.05)
+          .fromTo("#tearR", { y: 0, opacity: 0.9 }, { y: 18, opacity: 0.05, duration: 0.55, ease:"power2.in" }, 0.15)
+          .set(["#tearL","#tearR"], { y: 0, opacity: 0.85 }, 0.70);
+
+        // 让哭眼也有点“挤”
+        stateTL
+          .to(["#cryEyeL","#cryEyeR"], { y: 1.5, duration: 0.35 }, 0)
+          .to(["#cryEyeL","#cryEyeR"], { y: 0, duration: 0.45 }, 0.35);
+      },
+
+      // ✅ 新增：流口水（嘴角小液滴循环）
+      drool() {
+        resetToNeutral();
+        gsap.set("#drool", { opacity: 0.9, scaleY: 0.2, y: 0 });
+
+        stateTL = gsap.timeline({ repeat: -1, defaults:{ ease:"sine.inOut" } });
+
+        // 轻微咀嚼感（很克制）
+        stateTL.to("#mouth", { morphSVG:{ shape:"#mouthSmile", shapeIndex:"auto" }, duration: 0.2 }, 0);
+
+        // 液滴长出来 -> 下坠 -> 回缩
+        stateTL
+          .to("#drool", { scaleY: 1.15, duration: 0.55, ease:"power1.out" }, 0.05)
+          .to("#drool", { y: 8, opacity: 0.65, duration: 0.55, ease:"power2.in" }, 0.05)
+          .to("#drool", { scaleY: 0.2, y: 0, opacity: 0.9, duration: 0.25, ease:"power1.out" }, 0.68);
+
+        // 眯一点眼（更“馋”）
+        stateTL
+          .to(["#eyeL","#eyeR"], { scaleY: 0.35, duration: 0.35 }, 0.05)
+          .to(["#eyeL","#eyeR"], { scaleY: 0.55, duration: 0.55 }, 0.40);
+      },
+
+      // ✅ 新增：兴奋跳跳（整体弹跳 + 星星眼）
+      excited() {
+        resetToNeutral();
+
+        // 切星星眼
+        gsap.set("#eyesCircle", { opacity: 0 });
+        gsap.set("#eyesStar", { opacity: 1 });
+
+        gsap.set("#mouth", { morphSVG:{ shape:"#mouthSmile", shapeIndex:"auto" } });
+
+        stateTL = gsap.timeline({ repeat: -1, defaults:{ ease:"sine.inOut" } });
+
+        // 经典 squash & stretch 跳跃
+        stateTL
+          .to("#bunWrap", { y: 0, scaleX: 1.08, scaleY: 0.92, duration: 0.12, ease:"power2.in" }, 0)
+          .to("#bunWrap", { y: -22, scaleX: 0.96, scaleY: 1.05, duration: 0.20, ease:"power2.out" }, 0.12)
+          .to("#bunWrap", { y: 0, scaleX: 1.06, scaleY: 0.94, duration: 0.14, ease:"power2.in" }, 0.32)
+          .to("#bunWrap", { y: -14, scaleX: 0.98, scaleY: 1.03, duration: 0.18, ease:"power2.out" }, 0.46)
+          .to("#bunWrap", { y: 0, scaleX: 1.00, scaleY: 1.00, duration: 0.18, ease:"elastic.out(1,0.6)" }, 0.64);
+
+        // 星星微闪
+        stateTL
+          .to(["#starL","#starR"], { scale: 1.06, duration: 0.25 }, 0.10)
+          .to(["#starL","#starR"], { scale: 0.96, duration: 0.35 }, 0.35);
+      },
+
+      // ✅ 新增：疲惫（半眯 + 下沉 + 慢摇）
+      tired() {
+        resetToNeutral();
+
+        // 半眯眼
+        gsap.set(["#eyeL","#eyeR"], { scaleY: 0.25, y: 3 });
+        gsap.set("#mouth", { morphSVG:{ shape:"#mouthFlat", shapeIndex:"auto" } });
+
+        stateTL = gsap.timeline({ repeat: -1, yoyo: true, defaults:{ ease:"sine.inOut" } });
+
+        // 身体略“塌”
+        stateTL
+          .to("#bunWrap", { y: 6, scaleX: 1.015, scaleY: 0.985, duration: 1.2 }, 0)
+          .to("#face", { y: 3.5, rotation: -1.2, duration: 1.2 }, 0)
+          .to("#bunWrap", { y: 2, scaleX: 1.0, scaleY: 1.0, duration: 1.2 }, 1.2)
+          .to("#face", { y: 2.0, rotation: 1.0, duration: 1.2 }, 1.2);
+      },
+
+      // ------- 下面这些：保持你原来的（不改） -------
+      angry() {
+        resetToNeutral();
+        gsap.set("#brows", { opacity: 1 });
+        stateTL = gsap.timeline({ defaults:{ ease:"power2.out" } })
+          .to("#mouth", { morphSVG:{ shape:"#mouthAngry", shapeIndex:"auto" }, duration: 0.16 }, 0)
+          .to("#browL", { rotation: -18, y: 4, duration: 0.18, transformOrigin:"50% 50%" }, 0)
+          .to("#browR", { rotation: 18,  y: 4, duration: 0.18, transformOrigin:"50% 50%" }, 0)
+          .to("#face", { x: 1.2, duration: 0.06 }, 0.18)
+          .to("#face", { x: -1.2, duration: 0.06, repeat: 3, yoyo: true }, 0.24)
+          .to("#face", { x: 0, duration: 0.08 }, 0.54);
+      },
+
+      surprised() {
+        resetToNeutral();
+        gsap.set("#brows", { opacity: 1 });
+        stateTL = gsap.timeline({ defaults:{ ease:"power2.out" } })
+          .to("#mouth", {
+            morphSVG:{ shape:"#mouthO", shapeIndex:"auto" },
+            fill:"url(#mouthGrad)",
+            strokeWidth:0,
+            duration: 0.14
+          }, 0)
+          .to("#browL", { y: -8, duration: 0.16 }, 0)
+          .to("#browR", { y: -8, duration: 0.16 }, 0)
+          .to("#bunWrap", { scaleX: 0.98, scaleY: 1.02, duration: 0.16 }, 0)
+          .to("#bunWrap", { scaleX: 1.00, scaleY: 1.00, duration: 0.28, ease:"elastic.out(1,0.55)" }, 0.16);
+      },
+
+      sleepy() {
+        resetToNeutral();
+        stateTL = gsap.timeline({ defaults:{ ease:"sine.inOut" } })
+          .to(["#eyeL","#eyeR"], { scaleY: 0.18, duration: 0.18 }, 0)
+          .to("#mouth", { morphSVG:{ shape:"#mouthSleep", shapeIndex:"auto" }, duration: 0.16 }, 0)
+          .to("#face", { y: 2, duration: 0.18 }, 0)
+          .to("#face", { y: 5, duration: 0.8 }, 0.18)
+          .to("#face", { y: 2, duration: 0.8 }, 0.98);
+      },
+
+      chew() {
+        resetToNeutral();
+        stateTL = gsap.timeline({ repeat: -1, defaults:{ ease:"sine.inOut" } })
+          .to("#face", { y: 2, duration: 0.12 }, 0)
+          .to("#mouth", { morphSVG:{ shape:"#mouthSleep", shapeIndex:"auto" }, duration: 0.12 }, 0)
+          .to("#face", { y: 0, duration: 0.12 }, 0.12)
+          .to("#mouth", { morphSVG:{ shape:"#mouthSmile", shapeIndex:"auto" }, duration: 0.12 }, 0.12)
+          .to("#bunWrap", { scaleX: 1.015, scaleY: 0.985, duration: 0.24 }, 0)
+          .to("#bunWrap", { scaleX: 1.0, scaleY: 1.0, duration: 0.24 }, 0.24);
+      }
+    };
+
+    function setState(name) {
+      if (!States[name]) return;
+      stateTL = killTL(stateTL);
+      States[name]();
+    }
+
+    // ---------- 吞咽动作（保持不变） ----------
+    function swallowAction() {
+      if (actionTL && actionTL.isActive()) return;
+
+      stateTL = killTL(stateTL);
+      resetToNeutral();
+
+      gsap.set("#food", { opacity: 1 });
+
+      actionTL = gsap.timeline({
+        defaults: { ease:"power2.inOut" },
+        onComplete: () => setState("idle")
+      });
+
+      actionTL.to("#bunWrap", { scaleX: 1.03, scaleY: 0.97, duration: 0.10, ease:"power1.out" }, 0);
+
+      actionTL.to("#bun", { morphSVG:{ shape:"#bunOpen", shapeIndex:"auto" }, duration: 0.16 }, 0.02);
+      actionTL.to("#face", { y: 8, duration: 0.16 }, 0.02);
+      actionTL.to("#mouth", {
+        morphSVG:{ shape:"#mouthOpen", shapeIndex:"auto" },
+        fill:"url(#mouthGrad)",
+        strokeWidth:0,
+        duration: 0.16,
+        ease:"power2.out"
+      }, 0.04);
+
+      actionTL.to("#food", { y: 145, duration: 0.22, ease:"power2.in" }, 0.06);
+      actionTL.to("#food", { morphSVG:{ shape:"#foodSquish", shapeIndex:"auto" }, duration: 0.10, ease:"power1.in" }, 0.22);
+      actionTL.to("#food", { scale: 0.15, opacity: 0, duration: 0.10, ease:"power1.in" }, 0.26);
+
+      actionTL.to("#mouth", {
+        morphSVG:{ shape:"#mouthSmile", shapeIndex:"auto" },
+        fill:"none",
+        stroke:"#584030",
+        strokeWidth:10,
+        duration: 0.14
+      }, 0.30);
+
+      actionTL.to("#bun", { morphSVG:{ shape:"#bunBulge", shapeIndex:"auto" }, duration: 0.20 }, 0.30);
+
+      actionTL.to("#bolus", { opacity: 0.55, attr:{ rx:18, ry:12, cy:292 }, duration: 0.10, ease:"power1.out" }, 0.32);
+      actionTL.to("#bolus", { attr:{ cy:315, rx:16, ry:11 }, duration: 0.18 }, 0.42);
+      actionTL.to("#bolus", { attr:{ cy:342, rx:12, ry:9 }, opacity:0.18, duration: 0.22 }, 0.60);
+      actionTL.to("#bolus", { attr:{ rx:0, ry:0 }, opacity:0, duration: 0.12, ease:"power1.out" }, 0.80);
+
+      actionTL.to("#bunWrap", { scaleX:1, scaleY:1, y:0, duration:0.28, ease:"elastic.out(1,0.55)" }, 0.78);
+      actionTL.to("#bun", {
+        morphSVG:{ shape:"M130 318 C130 205 190 130 260 130 C330 130 390 205 390 318 Q390 335 372 340 C330 350 190 350 148 340 Q130 335 130 318 Z", shapeIndex:"auto" },
+        duration: 0.32,
+        ease:"elastic.out(1,0.55)"
+      }, 0.78);
+      actionTL.to("#face", { y:0, duration:0.22, ease:"power2.out" }, 0.78);
+    }
+
+    // ---------- 启动 ----------
+    startIdleLoops();
+    setState("idle");
+
+    document.querySelectorAll("button[data-state]").forEach(btn => {
+      btn.addEventListener("click", () => setState(btn.dataset.state));
+    });
+    document.getElementById("eatBtn").addEventListener("click", swallowAction);
+  </script>
+</body>
+</html>
