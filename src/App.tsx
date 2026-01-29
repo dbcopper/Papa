@@ -133,6 +133,10 @@ type ListEventsRequest = {
 
 // ============ Timeline API Functions ============
 
+async function saveDroppedFile(fileName: string, content: number[]): Promise<string> {
+  return invoke<string>("save_dropped_file", { request: { fileName, content } });
+}
+
 async function createDropEvent(request: CreateDropEventRequest): Promise<TimelineEventWithAttachments> {
   return invoke<TimelineEventWithAttachments>("create_drop_event", { request });
 }
@@ -218,7 +222,12 @@ type ReminderDuePayload = {
   attachments: Attachment[];
 };
 
-const BLINK_MIN_MS = 15000; /* 更频繁的眨眼，更可爱 */
+// Format date to local YYYY-MM-DD string
+function formatLocalDate(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+const BLINK_MIN_MS = 15000;
 const BLINK_MAX_MS = 30000;
 const USE_MOCK = true;
 const MOOD_CHECK_INTERVAL = 3000; // 每3秒检查一次心情
@@ -496,6 +505,7 @@ export default function App() {
   // ============ Record Panel State (Phase 2) ============
   const [recordPanelVisible, setRecordPanelVisible] = useState(false);
   const [pendingDropPaths, setPendingDropPaths] = useState<string[]>([]);
+  const [pendingDropText, setPendingDropText] = useState<string>("");
   const [recordNote, setRecordNote] = useState("");
   const [recordRemindEnabled, setRecordRemindEnabled] = useState(false);
   const [recordRemindAt, setRecordRemindAt] = useState<Date | null>(null);
@@ -510,9 +520,7 @@ export default function App() {
   // ============ Papa Space State (Phase 4) ============
   const [papaSpaceVisible, setPapaSpaceVisible] = useState(false);
   const [papaSpaceEvents, setPapaSpaceEvents] = useState<TimelineEventWithAttachments[]>([]);
-  const [papaSpaceSelectedDate, setPapaSpaceSelectedDate] = useState<string>(
-    new Date().toISOString().split("T")[0]
-  );
+  const [papaSpaceSelectedDate, setPapaSpaceSelectedDate] = useState<string>(() => formatLocalDate(new Date()));
   const [papaSpaceLoading, setPapaSpaceLoading] = useState(false);
   const [papaSpaceEditingEvent, setPapaSpaceEditingEvent] = useState<TimelineEventWithAttachments | null>(null);
   const [papaSpaceEditNote, setPapaSpaceEditNote] = useState("");
@@ -847,6 +855,14 @@ export default function App() {
       }
       
       if (event.payload.type === "drop") {
+        const paths = event.payload.paths;
+
+        // Only handle file drops here - text drops are handled by DOM onDrop
+        if (!paths || paths.length === 0) {
+          console.log("Tauri drop with no paths - letting DOM handler take over for text");
+          return;
+        }
+
         if (!isMuted) {
           // 清除之前的 timeout（如果有）
           if (eatChompTimeoutRef.current) {
@@ -854,7 +870,7 @@ export default function App() {
             eatChompTimeoutRef.current = null;
           }
           // 立即设置 eat_chomp 状态，确保动画能触发
-          console.log("Tauri drop detected, setting eat_chomp");
+          console.log("Tauri drop detected with files, setting eat_chomp");
           setPetState((currentState) => {
             // 如果当前是 waiting_for_drop，转换为 eat_chomp
             if (currentState === "waiting_for_drop" || currentState === "idle_breathe") {
@@ -865,45 +881,37 @@ export default function App() {
           // 记录 drop 开始时间
           const dropStartTime = Date.now();
 
-          const paths = event.payload.paths;
-          if (paths && paths.length > 0) {
-            // 保存待记录的路径，显示记录面板
-            setPendingDropPaths(paths);
-            setRecordNote("");
-            setRecordRemindEnabled(false);
-            setRecordRemindAt(null);
+          // 保存待记录的路径，显示记录面板
+          setPendingDropPaths(paths);
+          setPendingDropText(""); // Clear any pending text
+          setRecordNote("");
+          setRecordRemindEnabled(false);
+          setRecordRemindAt(null);
 
-            // Close other panels
-            setPanelVisible(false);
-            setChatDialogVisible(false);
-            setSettingsVisible(false);
-            setPapaSpaceVisible(false);
-            setReminderToastVisible(false);
-            setChatInput("");
-            setChatImage(null);
-            setChatAction(null);
-            setChatResult("");
-            setChatResultExpanded(false);
+          // Close other panels
+          setPanelVisible(false);
+          setChatDialogVisible(false);
+          setSettingsVisible(false);
+          setPapaSpaceVisible(false);
+          setReminderToastVisible(false);
+          setChatInput("");
+          setChatImage(null);
+          setChatAction(null);
+          setChatResult("");
+          setChatResultExpanded(false);
 
-            // 确保 eat_chomp 状态持续至少 1000ms（动画时长），然后显示记录面板
-            const elapsed = Date.now() - dropStartTime;
-            const remaining = Math.max(1000 - elapsed, 200);
-            eatChompTimeoutRef.current = window.setTimeout(() => {
-              setPetState("idle_breathe");
-              setRecordPanelVisible(true);
-              // Focus note input
-              setTimeout(() => {
-                recordNoteRef.current?.focus();
-              }, 100);
-              eatChompTimeoutRef.current = null;
-            }, Math.max(remaining, 1000));
-          } else {
-            // 如果没有路径，也要确保 eat_chomp 状态能显示
-            eatChompTimeoutRef.current = window.setTimeout(() => {
-              setPetState("idle_breathe");
-              eatChompTimeoutRef.current = null;
-            }, 1000);
-          }
+          // 确保 eat_chomp 状态持续至少 1000ms（动画时长），然后显示记录面板
+          const elapsed = Date.now() - dropStartTime;
+          const remaining = Math.max(1000 - elapsed, 200);
+          eatChompTimeoutRef.current = window.setTimeout(() => {
+            setPetState("idle_breathe");
+            setRecordPanelVisible(true);
+            // Focus note input
+            setTimeout(() => {
+              recordNoteRef.current?.focus();
+            }, 100);
+            eatChompTimeoutRef.current = null;
+          }, Math.max(remaining, 1000));
         }
       }
     });
@@ -1964,7 +1972,7 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
     if (activeReminder) {
       void openPapaSpace();
       // Select the date of the reminder event
-      const eventDate = new Date(activeReminder.event.createdAt).toISOString().split("T")[0];
+      const eventDate = formatLocalDate(new Date(activeReminder.event.createdAt));
       setPapaSpaceSelectedDate(eventDate);
     }
     setPetState("idle_breathe");
@@ -2024,14 +2032,14 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
     await loadPapaSpaceEvents(dateKey);
   };
 
-  // Get recent dates (last 14 days)
+  // Get recent dates (last 14 days) in local timezone
   const getRecentDates = (): string[] => {
     const dates: string[] = [];
     const today = new Date();
     for (let i = 0; i < 14; i++) {
       const date = new Date(today);
       date.setDate(today.getDate() - i);
-      dates.push(date.toISOString().split("T")[0]);
+      dates.push(formatLocalDate(date));
     }
     return dates;
   };
@@ -2043,10 +2051,10 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
     const yesterday = new Date(today);
     yesterday.setDate(today.getDate() - 1);
 
-    if (dateKey === today.toISOString().split("T")[0]) {
+    if (dateKey === formatLocalDate(today)) {
       return "Today";
     }
-    if (dateKey === yesterday.toISOString().split("T")[0]) {
+    if (dateKey === formatLocalDate(yesterday)) {
       return "Yesterday";
     }
     return `${date.getMonth() + 1}/${date.getDate()}`;
@@ -2198,7 +2206,7 @@ Keep it warm and concise. If few records, just give a simple reflection.`;
 
   // Save record to timeline
   const handleSaveRecord = async () => {
-    if (pendingDropPaths.length === 0) return;
+    if (pendingDropPaths.length === 0 && !pendingDropText) return;
 
     setRecordSaving(true);
     setPetState("thinking");
@@ -2210,12 +2218,25 @@ Keep it warm and concise. If few records, just give a simple reflection.`;
         remindAt = recordRemindAt.getTime();
       }
 
-      const result = await createDropEvent({
-        paths: pendingDropPaths,
-        note: recordNote.trim() || undefined,
-        remindAt,
-        remindMessage: recordNote.trim() || undefined,
-      });
+      let result: TimelineEventWithAttachments;
+
+      if (pendingDropText) {
+        // Save text event
+        result = await createTextEvent({
+          textContent: pendingDropText,
+          note: recordNote.trim(),
+          remindAt,
+          remindMessage: recordNote.trim() || undefined,
+        });
+      } else {
+        // Save file drop event
+        result = await createDropEvent({
+          paths: pendingDropPaths,
+          note: recordNote.trim() || undefined,
+          remindAt,
+          remindMessage: recordNote.trim() || undefined,
+        });
+      }
 
       setCurrentTimelineEvent(result);
       setPetState("success_happy");
@@ -2224,6 +2245,7 @@ Keep it warm and concise. If few records, just give a simple reflection.`;
       setTimeout(() => {
         setRecordPanelVisible(false);
         setPendingDropPaths([]);
+        setPendingDropText("");
         setRecordNote("");
         setRecordRemindEnabled(false);
         setRecordRemindAt(null);
@@ -2243,6 +2265,7 @@ Keep it warm and concise. If few records, just give a simple reflection.`;
   const handleCancelRecord = () => {
     setRecordPanelVisible(false);
     setPendingDropPaths([]);
+    setPendingDropText("");
     setRecordNote("");
     setRecordRemindEnabled(false);
     setRecordRemindAt(null);
@@ -2428,12 +2451,119 @@ Keep it warm and concise. If few records, just give a simple reflection.`;
       }}
       onDrop={(event: React.DragEvent<HTMLDivElement>) => {
         event.preventDefault();
-        // DOM drop 事件由 onDragDropEvent 处理，这里只做防御性处理
-        // 如果 Tauri 事件没有触发，这里作为备用
-        if (!isMuted && petState !== "eat_chomp") {
-          setPetState("eat_chomp");
-          window.setTimeout(() => setPetState("idle_breathe"), 900);
+        if (isMuted) return;
+
+        // Debug logging (can be removed in production)
+        console.log("DOM onDrop - types:", event.dataTransfer.types);
+
+        // Clear any existing timeout
+        if (eatChompTimeoutRef.current) {
+          window.clearTimeout(eatChompTimeoutRef.current);
+          eatChompTimeoutRef.current = null;
         }
+
+        // Check for file drops first (files take priority over text)
+        const files = event.dataTransfer.files;
+        if (files && files.length > 0) {
+          console.log("Files detected:", files.length);
+          setPetState("eat_chomp");
+
+          // Close other panels
+          setPanelVisible(false);
+          setChatDialogVisible(false);
+          setSettingsVisible(false);
+          setPapaSpaceVisible(false);
+          setReminderToastVisible(false);
+          setChatInput("");
+          setChatImage(null);
+          setChatAction(null);
+          setChatResult("");
+          setChatResultExpanded(false);
+
+          // Read files and save them to get paths
+          const filePromises: Promise<string>[] = [];
+          for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            filePromises.push(
+              new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = async () => {
+                  try {
+                    const arrayBuffer = reader.result as ArrayBuffer;
+                    const content = Array.from(new Uint8Array(arrayBuffer));
+                    const savedPath = await saveDroppedFile(file.name, content);
+                    resolve(savedPath);
+                  } catch (err) {
+                    reject(err);
+                  }
+                };
+                reader.onerror = () => reject(reader.error);
+                reader.readAsArrayBuffer(file);
+              })
+            );
+          }
+
+          // Process all files
+          Promise.all(filePromises)
+            .then((paths) => {
+              console.log("Files saved to:", paths);
+              setPendingDropPaths(paths);
+              setPendingDropText("");
+              setRecordNote("");
+              setRecordRemindEnabled(false);
+              setRecordRemindAt(null);
+
+              // Show record panel after eat animation
+              eatChompTimeoutRef.current = window.setTimeout(() => {
+                setPetState("idle_breathe");
+                setRecordPanelVisible(true);
+                eatChompTimeoutRef.current = null;
+                setTimeout(() => {
+                  recordNoteRef.current?.focus();
+                }, 100);
+              }, 1000);
+            })
+            .catch((err) => {
+              console.error("Failed to save files:", err);
+              setPetState("error_confused");
+              setTimeout(() => setPetState("idle_breathe"), 2000);
+            });
+          return;
+        }
+
+        // Check for text data (dragged selection)
+        const text = event.dataTransfer.getData("text/plain");
+        if (text && text.trim()) {
+          console.log("Text dropped:", text.slice(0, 50) + "...");
+          setPetState("eat_chomp");
+
+          // Close other panels
+          setPanelVisible(false);
+          setChatDialogVisible(false);
+          setSettingsVisible(false);
+          setPapaSpaceVisible(false);
+          setReminderToastVisible(false);
+
+          // Set pending text for record panel
+          setPendingDropText(text.trim());
+          setPendingDropPaths([]);
+          setRecordNote("");
+          setRecordRemindEnabled(false);
+          setRecordRemindAt(null);
+
+          // Show record panel after eat animation
+          eatChompTimeoutRef.current = window.setTimeout(() => {
+            setPetState("idle_breathe");
+            setRecordPanelVisible(true);
+            eatChompTimeoutRef.current = null;
+            setTimeout(() => {
+              recordNoteRef.current?.focus();
+            }, 100);
+          }, 1000);
+          return;
+        }
+
+        // No files or text detected in drop
       }}
       onContextMenu={(event: React.MouseEvent<HTMLDivElement>) => {
         event.preventDefault();
@@ -2764,17 +2894,28 @@ Keep it warm and concise. If few records, just give a simple reflection.`;
               </button>
             </div>
             <div className="record-content">
-              {/* File preview */}
-              <div className="record-files">
-                {pendingDropPaths.map((path, index) => (
-                  <div key={index} className="record-file-item">
-                    <span className="record-file-icon">
-                      {path.match(/\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i) ? "🖼️" : "📄"}
-                    </span>
-                    <span className="record-file-name">{getFileDisplayName(path)}</span>
+              {/* File or Text preview */}
+              {pendingDropText ? (
+                <div className="record-text-preview">
+                  <span className="record-text-icon">📝</span>
+                  <div className="record-text-content">
+                    {pendingDropText.length > 200
+                      ? pendingDropText.slice(0, 200) + "..."
+                      : pendingDropText}
                   </div>
-                ))}
-              </div>
+                </div>
+              ) : (
+                <div className="record-files">
+                  {pendingDropPaths.map((path, index) => (
+                    <div key={index} className="record-file-item">
+                      <span className="record-file-icon">
+                        {path.match(/\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i) ? "🖼️" : "📄"}
+                      </span>
+                      <span className="record-file-name">{getFileDisplayName(path)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {/* Note input */}
               <div className="record-note-section">
@@ -2809,8 +2950,8 @@ Keep it warm and concise. If few records, just give a simple reflection.`;
                 {recordRemindEnabled && (
                   <div className="record-remind-options">
                     <div className="record-remind-quick">
-                      <button onClick={() => handleQuickRemind(10)} data-no-drag>10分钟</button>
-                      <button onClick={() => handleQuickRemind(60)} data-no-drag>1小时</button>
+                      <button onClick={() => handleQuickRemind(10)} data-no-drag>10 min</button>
+                      <button onClick={() => handleQuickRemind(60)} data-no-drag>1 hour</button>
                       <button onClick={() => handleQuickRemind(60 * 24)} data-no-drag>Tomorrow</button>
                       <button onClick={() => handleQuickRemind(60 * 24 * 3)} data-no-drag>3 days</button>
                     </div>

@@ -1138,6 +1138,30 @@ body,
   flex: 1;
 }
 
+/* Text preview for dropped text */
+.record-text-preview {
+  display: flex;
+  gap: 8px;
+  padding: 8px 10px;
+  background: rgba(255, 248, 238, 0.7);
+  border-radius: 6px;
+  border: 1px dashed rgba(0, 0, 0, 0.15);
+}
+
+.record-text-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.record-text-content {
+  font-size: 11px;
+  color: #2d2a26;
+  line-height: 1.4;
+  max-height: 60px;
+  overflow-y: auto;
+  word-break: break-word;
+}
+
 /* Note input section */
 .record-note-section {
   display: flex;

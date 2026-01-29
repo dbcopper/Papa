@@ -184,6 +184,13 @@ struct CreateTextEventRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct SaveDroppedFileRequest {
+  file_name: String,
+  content: Vec<u8>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ListEventsRequest {
   start_date: Option<i64>,  // unix ms
   end_date: Option<i64>,    // unix ms
@@ -551,6 +558,38 @@ async fn read_file_content(file_path: String) -> Result<String, String> {
 }
 
 // ============ Timeline Event Commands ============
+
+#[tauri::command]
+fn save_dropped_file(
+  app: tauri::AppHandle,
+  request: SaveDroppedFileRequest,
+) -> Result<String, String> {
+  // Get app data directory
+  let app_data = app.path().app_data_dir()
+    .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+
+  // Create drops directory if it doesn't exist
+  let drops_dir = app_data.join("drops");
+  fs::create_dir_all(&drops_dir)
+    .map_err(|e| format!("Failed to create drops dir: {}", e))?;
+
+  // Generate unique filename to avoid collisions
+  let timestamp = std::time::SystemTime::now()
+    .duration_since(std::time::UNIX_EPOCH)
+    .unwrap()
+    .as_millis();
+  let unique_name = format!("{}_{}", timestamp, request.file_name);
+  let file_path = drops_dir.join(&unique_name);
+
+  // Write file content
+  fs::write(&file_path, &request.content)
+    .map_err(|e| format!("Failed to write file: {}", e))?;
+
+  // Return the full path as string
+  file_path.to_str()
+    .map(|s| s.to_string())
+    .ok_or_else(|| "Invalid path".to_string())
+}
 
 #[tauri::command]
 fn create_drop_event(
@@ -1633,6 +1672,7 @@ fn main() {
       call_llm_api,
       read_file_content,
       // Timeline event commands
+      save_dropped_file,
       create_drop_event,
       create_text_event,
       list_events,
