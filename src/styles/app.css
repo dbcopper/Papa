@@ -61,7 +61,6 @@ body,
   top: 10px;
   --bubble-x: -50%;
   --bubble-y: 0px;
-  max-height: calc(var(--window-height, 320px) - 20px);
 }
 
 
@@ -427,7 +426,8 @@ body,
   top: 10px;
   width: min(220px, calc(var(--window-width, 720px) - var(--pet-size) - var(--bubble-gap) - 20px));
   min-width: 200px;
-  max-height: calc(var(--window-height, 320px) - 28px);
+  /* top: 10px, bottom margin: 10px */
+  max-height: calc(var(--window-height, 320px) - 20px);
   background: var(--bubble-bg);
   border: 1px solid var(--bubble-border);
   border-radius: 12px;
@@ -1061,4 +1061,724 @@ body,
   color: rgba(60, 60, 60, 0.6);
   font-size: 10px;
   font-style: italic;
+}
+
+/* ============ Record Panel (Phase 2) ============ */
+
+.record-panel {
+  width: min(280px, calc(var(--window-width, 720px) - var(--pet-size) - var(--bubble-gap) - 20px));
+  min-width: 250px;
+  max-height: calc(var(--window-height, 320px) - 20px);
+  overflow: hidden;
+}
+
+.record-panel .bubble-header {
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  margin-bottom: 4px;
+}
+
+.record-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 4px;
+  max-height: calc(var(--window-height, 360px) - 120px);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.record-content::-webkit-scrollbar {
+  width: 5px;
+}
+
+.record-content::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 3px;
+}
+
+.record-content::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+}
+
+/* File preview section */
+.record-files {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 80px;
+  overflow-y: auto;
+}
+
+.record-file-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: rgba(255, 248, 238, 0.7);
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.record-file-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.record-file-name {
+  font-size: 11px;
+  color: #2d2a26;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+/* Note input section */
+.record-note-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.record-note-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 6px;
+  font-size: 11px;
+  font-family: inherit;
+  background: white;
+  color: #2d2a26;
+  resize: none;
+  -webkit-app-region: no-drag;
+  box-sizing: border-box;
+}
+
+.record-note-input:focus {
+  outline: none;
+  border-color: var(--accent-strong);
+  box-shadow: 0 0 0 2px rgba(255, 127, 80, 0.1);
+}
+
+.record-note-input::placeholder {
+  color: rgba(60, 60, 60, 0.4);
+}
+
+/* Remind toggle section */
+.record-remind-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.record-remind-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #2d2a26;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.record-remind-toggle input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  accent-color: var(--accent-strong);
+}
+
+.record-remind-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 20px;
+}
+
+.record-remind-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.record-remind-quick button {
+  padding: 4px 8px;
+  font-size: 10px;
+  background: rgba(255, 248, 238, 0.8);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 4px;
+  cursor: pointer;
+  color: #2d2a26;
+  transition: all 0.15s ease;
+  -webkit-app-region: no-drag;
+}
+
+.record-remind-quick button:hover {
+  background: var(--accent);
+  border-color: var(--accent-strong);
+}
+
+.record-remind-time {
+  font-size: 10px;
+  color: var(--accent-strong);
+  font-weight: 500;
+}
+
+/* Action buttons */
+.record-actions {
+  display: flex;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  margin-top: 4px;
+}
+
+.record-cancel-button {
+  flex: 1;
+  padding: 8px 12px;
+  font-size: 11px;
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 6px;
+  color: #2d2a26;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: background 0.15s ease;
+}
+
+.record-cancel-button:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.record-cancel-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.record-save-button {
+  flex: 2;
+  padding: 8px 16px;
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--accent);
+  border: 1px solid var(--accent-strong);
+  border-radius: 6px;
+  color: #2d2a26;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: background 0.15s ease;
+}
+
+.record-save-button:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+.record-save-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ============ Reminder Panel (Phase 3) ============ */
+
+.reminder-panel {
+  border: 2px solid var(--accent);
+  max-height: calc(var(--window-height, 320px) - 20px);
+  overflow: hidden;
+}
+
+.reminder-panel-content {
+  margin-bottom: 10px;
+}
+
+.reminder-panel-message {
+  margin: 0 0 8px 0;
+  font-size: 12px;
+  color: #2d2a26;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.reminder-panel-attachment {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: rgba(255, 248, 238, 0.7);
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.reminder-panel-attachment-icon {
+  font-size: 12px;
+}
+
+.reminder-panel-attachment-name {
+  font-size: 10px;
+  color: #666;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reminder-panel-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.reminder-panel-done {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 500;
+  background: #6bd18b;
+  border: 1px solid #4bb86b;
+  border-radius: 6px;
+  color: white;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.reminder-panel-done:hover {
+  background: #5ac77a;
+}
+
+.reminder-panel-snooze-group {
+  display: flex;
+  gap: 6px;
+}
+
+.reminder-panel-snooze {
+  flex: 1;
+  padding: 6px 8px;
+  font-size: 10px;
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.reminder-panel-snooze:hover {
+  background: rgba(0, 0, 0, 0.1);
+  color: #333;
+}
+
+/* ============ Papa Space (Phase 4) ============ */
+
+.papa-space {
+  width: min(320px, calc(var(--window-width, 720px) - var(--pet-size) - var(--bubble-gap) - 20px));
+  min-width: 280px;
+  /* Ensure panel stays within window: top 10px + safe margin */
+  max-height: calc(100vh - 20px);
+  height: auto;
+  overflow: hidden;
+}
+
+.papa-space .bubble-header {
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  margin-bottom: 4px;
+}
+
+.papa-space-content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Action bar */
+.papa-space-export-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  flex-shrink: 0;
+}
+
+.papa-space-ai-btn {
+  padding: 5px 10px;
+  font-size: 10px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  border-radius: 4px;
+  color: white;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-weight: 500;
+}
+
+.papa-space-ai-btn:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.papa-space-ai-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.papa-space-export-group {
+  display: flex;
+  gap: 4px;
+}
+
+.papa-space-export-btn {
+  padding: 4px 6px;
+  font-size: 10px;
+  background: rgba(107, 209, 139, 0.2);
+  border: 1px solid rgba(107, 209, 139, 0.4);
+  border-radius: 4px;
+  color: #2e7d32;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.papa-space-export-btn:hover {
+  background: rgba(107, 209, 139, 0.4);
+  border-color: rgba(107, 209, 139, 0.6);
+}
+
+/* AI Summary */
+.papa-space-ai-summary {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+  border: 1px solid rgba(102, 126, 234, 0.3);
+  border-radius: 8px;
+  padding: 10px;
+  flex-shrink: 0;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.papa-space-ai-summary-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #5a67d8;
+}
+
+.papa-space-ai-summary-close {
+  background: none;
+  border: none;
+  font-size: 14px;
+  cursor: pointer;
+  color: #666;
+  padding: 0;
+  line-height: 1;
+}
+
+.papa-space-ai-summary-close:hover {
+  color: #333;
+}
+
+.papa-space-ai-summary-content {
+  font-size: 10px;
+  line-height: 1.5;
+  color: #444;
+}
+
+.papa-space-ai-summary-loading {
+  text-align: center;
+  color: #667eea;
+  padding: 10px;
+}
+
+.loading-dots::after {
+  content: '';
+  animation: dots 1.5s steps(4, end) infinite;
+}
+
+@keyframes dots {
+  0%, 20% { content: ''; }
+  40% { content: '.'; }
+  60% { content: '..'; }
+  80%, 100% { content: '...'; }
+}
+
+.papa-space-ai-summary-text p {
+  margin: 0 0 6px 0;
+}
+
+.papa-space-ai-summary-text p:empty {
+  display: none;
+}
+
+.papa-space-ai-summary::-webkit-scrollbar {
+  width: 4px;
+}
+
+.papa-space-ai-summary::-webkit-scrollbar-thumb {
+  background: rgba(102, 126, 234, 0.3);
+  border-radius: 2px;
+}
+
+/* Date selector */
+.papa-space-dates {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  flex-shrink: 0;
+}
+
+.papa-space-dates::-webkit-scrollbar {
+  height: 4px;
+}
+
+.papa-space-dates::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 2px;
+}
+
+.papa-space-date-btn {
+  padding: 4px 8px;
+  font-size: 10px;
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 4px;
+  color: #666;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.papa-space-date-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.papa-space-date-btn.active {
+  background: var(--accent);
+  border-color: var(--accent-strong);
+  color: #2d2a26;
+  font-weight: 500;
+}
+
+/* Timeline */
+.papa-space-timeline {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-right: 4px;
+}
+
+.papa-space-timeline::-webkit-scrollbar {
+  width: 5px;
+}
+
+.papa-space-timeline::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+}
+
+.papa-space-loading,
+.papa-space-empty {
+  text-align: center;
+  padding: 20px;
+  color: #999;
+  font-size: 11px;
+}
+
+/* Event item */
+.papa-space-event {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  background: rgba(255, 248, 238, 0.5);
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.papa-space-event-time {
+  font-size: 10px;
+  color: #999;
+  min-width: 36px;
+  flex-shrink: 0;
+}
+
+.papa-space-event-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.papa-space-event-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.papa-space-event-icon {
+  font-size: 12px;
+}
+
+.papa-space-event-title {
+  flex: 1;
+  font-size: 11px;
+  font-weight: 500;
+  color: #2d2a26;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.papa-space-event-actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.papa-space-event:hover .papa-space-event-actions {
+  opacity: 1;
+}
+
+.papa-space-event-edit,
+.papa-space-event-delete {
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  font-size: 10px;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: background 0.15s ease;
+}
+
+.papa-space-event-edit:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.papa-space-event-delete:hover {
+  background: rgba(255, 100, 100, 0.2);
+}
+
+.papa-space-event-note {
+  margin: 0;
+  font-size: 10px;
+  color: #666;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.papa-space-event-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.papa-space-attachment {
+  font-size: 9px;
+  padding: 2px 6px;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 3px;
+  color: #666;
+}
+
+.papa-space-event-reminders {
+  margin-top: 4px;
+}
+
+.papa-space-reminder {
+  font-size: 9px;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.papa-space-reminder.pending {
+  background: rgba(255, 179, 71, 0.3);
+  color: #b37700;
+}
+
+.papa-space-reminder.dismissed {
+  background: rgba(107, 209, 139, 0.3);
+  color: #2e7d32;
+}
+
+.papa-space-reminder.triggered,
+.papa-space-reminder.snoozed {
+  background: rgba(0, 0, 0, 0.08);
+  color: #666;
+}
+
+/* Edit modal */
+.papa-space-edit-modal {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  right: 10px;
+  background: white;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 8px;
+  padding: 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.papa-space-edit-header {
+  font-size: 11px;
+  font-weight: 500;
+  margin-bottom: 8px;
+  color: #2d2a26;
+}
+
+.papa-space-edit-input {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: inherit;
+  resize: none;
+  box-sizing: border-box;
+}
+
+.papa-space-edit-input:focus {
+  outline: none;
+  border-color: var(--accent-strong);
+}
+
+.papa-space-edit-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  justify-content: flex-end;
+}
+
+.papa-space-edit-actions button {
+  padding: 6px 12px;
+  font-size: 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.papa-space-edit-actions button:first-child {
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  color: #666;
+}
+
+.papa-space-edit-actions button:last-child {
+  background: var(--accent);
+  border: 1px solid var(--accent-strong);
+  color: #2d2a26;
 }

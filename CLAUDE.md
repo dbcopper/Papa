@@ -157,3 +157,291 @@ Note: This project uses both Vite (frontend) and Tauri (desktop wrapper). The `t
 - `MOOD_CHECK_INTERVAL`: How often to analyze user behavior (3 seconds)
 - `CONVERSATION_COOLDOWN`: Minimum time between pet conversations (30 seconds)
 - `WINDOW_COLLAPSED / WINDOW_EXPANDED`: Window size configurations
+
+---
+
+# Papa Pet 开发档案（Development Dossier）
+
+## 1. 项目概述
+
+### 1.1 产品目标
+
+构建一个桌面常驻、低打扰的个人工作/生活记录器：
+
+- **白天**：用户把"文字/截图/文件/想法"喂给 Papa → 可靠记录（不依赖 LLM）
+- **任意时刻**：可在记录时附加 **提醒指令**（如"3 天后提醒我跟进"）
+- **晚上**：自动或一键生成 **当日文档输出**（含时间点/日期/附件索引）
+- **早上**：问候 + 基于近期日志的轻提醒（可选 LLM 增强）
+- 支持"情境状态"（Morning/Focus/Evening/Idle）驱动行为
+- 右键进入 **Papa Space**（控制中心）：设置、日志查看、导出管理
+
+### 1.2 非目标（MVP 明确不做）
+
+- 不做通用聊天机器人入口（聊天仅作为"对记录的解释/摘要增强"）
+- 不做复杂的自动执行（发邮件/改文件/操作系统自动化）
+- 不做跨设备云同步（先本地优先）
+- 不做重度任务管理（提醒挂靠记录项即可）
+
+## 2. 用户流程与关键路径
+
+### 2.1 白天记录（核心路径）
+
+1. 用户拖入文件/截图到 Papa 主窗口
+2. 弹出 Bubble Panel（记录面板）
+3. 用户可选：填写备注（note）/添加提醒（remind_at 或 after）
+4. 保存 → 生成 `timeline_event`（+ attachments）+ optional reminder
+5. 面板收起，窗口恢复 320x320
+
+**成功标准**： 3 秒内完成一次记录（拖入→保存→回到桌面不打扰）
+
+### 2.2 晚上输出（高光路径）
+
+1. 到达设定时间（如 18:10）或用户手动触发"生成今日文档"
+2. 系统读取当日 `timeline_events`
+3. 生成 Markdown（或 HTML）并落盘
+4. 用户在 Papa Space 中可查看、复制、导出 PDF（可后置）
+
+**成功标准**： 输出内容结构稳定，可回顾、可复制发送
+
+### 2.3 提醒触发（粘性路径）
+
+1. `reminder` 到期（pending 且 remind_at <= now）
+2. Papa 弹出提醒气泡
+3. 用户选择：完成/稍后/忽略
+4. 更新 reminder 状态与日志记录
+
+**成功标准**： 提醒准确、轻、可延后
+
+### 2.4 早上问候（陪伴路径）
+
+1. 第一次唤醒或到达 morning 时间（如 9:00）
+2. Papa 显示"早安 + 昨日回顾（短）+ 今日提醒（轻）"
+3. 用户可一键打开 Papa Space 查看详情
+
+## 3. 信息架构与模块划分
+
+### 3.1 模块总览
+
+| 模块 | 职责 |
+|------|------|
+| **Desktop Pet Shell**（主窗） | 透明置顶、宠物动画、状态指示 |
+| **Bubble Panel**（记录/提醒/聊天） | 轻交互面板 |
+| **Papa Space**（控制中心） | 日志列表、详情、导出、设置 |
+| **Data Layer**（SQLite） | 时间线、附件、提醒、导出记录 |
+| **Scheduler**（提醒调度） | 定时扫描 reminders |
+| **Exporter**（文档生成） | 日更 markdown / html / pdf（后置） |
+| **Optional AI Layer** | 摘要/回顾/自然语言时间解析（可插拔） |
+
+## 4. 数据模型（SQLite Schema）
+
+升级为"时间线优先"的结构：事件、附件、提醒、导出。
+
+### 4.1 表：timeline_events
+
+```sql
+CREATE TABLE IF NOT EXISTS timeline_events (
+  id TEXT PRIMARY KEY,
+  type TEXT NOT NULL,                 -- 'file' | 'image' | 'text' | 'thought'
+  title TEXT,                         -- 可选：自动生成或用户输入
+  note TEXT,                          -- 用户备注（核心）
+  text_content TEXT,                  -- 当 type='text' 时存内容
+  created_at INTEGER NOT NULL,        -- unix ms
+  source TEXT,                        -- 'drop' | 'manual' | 'clipboard' (预留)
+  is_deleted INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_timeline_created_at ON timeline_events(created_at);
+```
+
+### 4.2 表：attachments（文件/截图/图片）
+
+```sql
+CREATE TABLE IF NOT EXISTS attachments (
+  id TEXT PRIMARY KEY,
+  event_id TEXT NOT NULL,
+  kind TEXT NOT NULL,                 -- 'file' | 'image'
+  original_path TEXT NOT NULL,
+  stored_path TEXT,                   -- 可选：复制到 app data（推荐）
+  file_name TEXT,
+  mime_type TEXT,
+  size_bytes INTEGER,
+  sha256 TEXT,
+  width INTEGER,                      -- 图片可选
+  height INTEGER,                     -- 图片可选
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY(event_id) REFERENCES timeline_events(id)
+);
+CREATE INDEX IF NOT EXISTS idx_attach_event ON attachments(event_id);
+```
+
+### 4.3 表：reminders（挂在事件上的提醒）
+
+```sql
+CREATE TABLE IF NOT EXISTS reminders (
+  id TEXT PRIMARY KEY,
+  event_id TEXT NOT NULL,
+  remind_at INTEGER NOT NULL,         -- unix ms
+  message TEXT NOT NULL,              -- 提醒内容（默认来自 note 或用户输入）
+  status TEXT NOT NULL,               -- 'pending' | 'triggered' | 'dismissed' | 'snoozed'
+  triggered_at INTEGER,
+  snooze_until INTEGER,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY(event_id) REFERENCES timeline_events(id)
+);
+CREATE INDEX IF NOT EXISTS idx_remind_due ON reminders(status, remind_at);
+```
+
+### 4.4 表：daily_exports（每日文档输出记录）
+
+```sql
+CREATE TABLE IF NOT EXISTS daily_exports (
+  id TEXT PRIMARY KEY,
+  date_key TEXT NOT NULL,             -- 'YYYY-MM-DD'（本地时区）
+  output_format TEXT NOT NULL,        -- 'md' | 'html' | 'pdf'
+  output_path TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_export_date_format ON daily_exports(date_key, output_format);
+```
+
+### 4.5 表：settings（简化版 KV）
+
+```sql
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+```
+
+## 5. 事件与接口设计（Tauri Commands & Events）
+
+### 5.1 Rust → Frontend 事件（emit）
+
+| 事件名 | 说明 |
+|--------|------|
+| `drag-over` | 进入可投放区域 |
+| `drag-leave` | 离开 |
+| `drop-received` | 收到拖放原始信息（paths/mime 等） |
+| `drop-processed` | 文件已入库（返回 event_id / attachment_id） |
+| `reminder-due` | 提醒到期（payload：reminder + event + attachment preview） |
+| `daily-export-ready` | 文档已生成（path/date_key） |
+
+### 5.2 Frontend → Rust Commands（invoke）
+
+#### 记录相关
+
+| Command | 参数 | 说明 |
+|---------|------|------|
+| `create_text_event` | `note, text_content, remind?: RemindSpec` | 创建文本记录 |
+| `create_drop_event` | `files[], note?, remind?` | 创建拖放记录 |
+| `delete_event` | `event_id` | 删除事件 |
+| `list_events` | `date_range \| page` | 列出事件 |
+| `get_event_detail` | `event_id` | 获取事件详情 |
+
+#### 提醒相关
+
+| Command | 参数 | 说明 |
+|---------|------|------|
+| `create_reminder` | `event_id, remind_at, message` | 创建提醒 |
+| `snooze_reminder` | `reminder_id, minutes` | 延后提醒 |
+| `dismiss_reminder` | `reminder_id` | 关闭提醒 |
+| `list_pending_reminders` | - | 列出待处理提醒 |
+
+#### 导出相关
+
+| Command | 参数 | 说明 |
+|---------|------|------|
+| `generate_daily_export` | `date_key, format` | 生成每日导出，返回 output_path |
+| `list_exports` | `date_range` | 列出导出记录 |
+
+#### 设置相关
+
+| Command | 参数 | 说明 |
+|---------|------|------|
+| `get_setting` | `key` | 获取设置 |
+| `set_setting` | `key, value` | 保存设置 |
+| `list_settings` | - | 列出所有设置 |
+
+## 6. 前端 UI/UX 规范
+
+### 6.1 主窗（Pet Window）
+
+- **默认**：320x320，透明置顶，无边框
+- **仅显示**：宠物 + 状态小指示（点/表情）
+- **右键菜单**：
+  - Open Papa Space
+  - Focus Mode（切换）
+  - Hide 10s
+  - Quit
+
+### 6.2 Bubble Panel（记录面板）
+
+**触发**：拖入/快捷键（可后置）/手动记录
+
+**字段**：
+- **标题/预览**：文件名 / 图片缩略图 / 文本片段
+- **note 输入框**（1～3 行默认）
+- **提醒开关**：⏰ 提醒我
+  - 选项 A（MVP 推荐）：时间选择器（绝对时间）
+  - 选项 B：快捷按钮（10min / 1h / 明天上午 / 3天后）
+- **保存 / 取消**
+
+### 6.3 Reminder Toast（提醒气泡）
+
+- **文案**：你之前让我提醒你：{message}
+- **关联**：显示附件缩略或文件名
+- **操作**：
+  - ✅ Done（dismiss）
+  - ⏰ Snooze（10min / 1h 自选）
+  - 📝 Open（打开事件详情）
+
+### 6.4 Papa Space（控制中心）
+
+- **左侧**：日期列表（最近 14 天）
+- **右侧**：当天详情（时间线）
+  - 每条 event：时间 + 类型图标 + note + 附件
+  - 事件详情页：附件列表、提醒列表、编辑 note
+- **顶部**：导出按钮（MD/HTML；PDF 后置）
+- **设置页**：
+  - `morning_time`（默认 09:00）
+  - `evening_export_time`（默认 18:10）
+  - `reminder_scan_interval`（默认 60s）
+  - `storage_policy`（copy to appdata / keep original ref）
+  - LLM provider/model/key（可选）
+
+## 7. 开发迭代计划
+
+### Phase 1: 数据层重构（优先级最高）
+
+1. 创建新的 SQLite 表结构（timeline_events, attachments, reminders, daily_exports, settings）
+2. 迁移现有 drop_records 数据到新结构
+3. 实现基础 CRUD Tauri Commands
+
+### Phase 2: Bubble Panel 记录流程
+
+1. 实现拖放后弹出 Bubble Panel
+2. 实现 note 输入 + 保存逻辑
+3. 实现提醒时间选择（MVP 用绝对时间选择器）
+
+### Phase 3: 提醒系统
+
+1. 实现 Rust 后台提醒扫描器（每 60s 检查到期 reminders）
+2. 实现 reminder-due 事件推送
+3. 实现前端 Reminder Toast 及交互
+
+### Phase 4: Papa Space 控制中心
+
+1. 实现独立窗口或面板
+2. 实现日期列表 + 时间线视图
+3. 实现事件详情编辑
+
+### Phase 5: 每日导出
+
+1. 实现 Markdown 导出生成器
+2. 实现定时/手动触发导出
+3. 实现导出记录管理
+
+### Phase 6: 早间问候（可选 LLM 增强）
+
+1. 实现情境状态检测（Morning/Focus/Evening/Idle）
+2. 实现早间问候 UI
+3. 可选：接入 LLM 生成回顾摘要

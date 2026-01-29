@@ -65,6 +65,159 @@ type LlmSettings = {
   model: string;
 };
 
+// ============ Timeline Types ============
+
+type TimelineEvent = {
+  id: string;
+  type: "file" | "image" | "text" | "thought";
+  title: string | null;
+  note: string | null;
+  textContent: string | null;
+  createdAt: number;
+  source: "drop" | "manual" | "clipboard" | null;
+  isDeleted: boolean;
+};
+
+type Attachment = {
+  id: string;
+  eventId: string;
+  kind: "file" | "image";
+  originalPath: string;
+  storedPath: string | null;
+  fileName: string | null;
+  mimeType: string | null;
+  sizeBytes: number | null;
+  sha256: string | null;
+  width: number | null;
+  height: number | null;
+  createdAt: number;
+};
+
+type Reminder = {
+  id: string;
+  eventId: string;
+  remindAt: number;
+  message: string;
+  status: "pending" | "triggered" | "dismissed" | "snoozed";
+  triggeredAt: number | null;
+  snoozeUntil: number | null;
+  createdAt: number;
+};
+
+type TimelineEventWithAttachments = {
+  event: TimelineEvent;
+  attachments: Attachment[];
+  reminders: Reminder[];
+};
+
+type CreateDropEventRequest = {
+  paths: string[];
+  note?: string;
+  remindAt?: number;
+  remindMessage?: string;
+};
+
+type CreateTextEventRequest = {
+  note: string;
+  textContent?: string;
+  remindAt?: number;
+  remindMessage?: string;
+};
+
+type ListEventsRequest = {
+  startDate?: number;
+  endDate?: number;
+  page?: number;
+  pageSize?: number;
+};
+
+// ============ Timeline API Functions ============
+
+async function createDropEvent(request: CreateDropEventRequest): Promise<TimelineEventWithAttachments> {
+  return invoke<TimelineEventWithAttachments>("create_drop_event", { request });
+}
+
+async function createTextEvent(request: CreateTextEventRequest): Promise<TimelineEventWithAttachments> {
+  return invoke<TimelineEventWithAttachments>("create_text_event", { request });
+}
+
+async function listEvents(request: ListEventsRequest = {}): Promise<TimelineEventWithAttachments[]> {
+  return invoke<TimelineEventWithAttachments[]>("list_events", { request });
+}
+
+async function getEventDetail(eventId: string): Promise<TimelineEventWithAttachments> {
+  return invoke<TimelineEventWithAttachments>("get_event_detail", { eventId });
+}
+
+async function deleteEvent(eventId: string): Promise<void> {
+  return invoke<void>("delete_event", { eventId });
+}
+
+async function updateEventNote(eventId: string, note: string): Promise<void> {
+  return invoke<void>("update_event_note", { eventId, note });
+}
+
+// ============ Reminder API Functions ============
+
+async function createReminder(eventId: string, remindAt: number, message: string): Promise<Reminder> {
+  return invoke<Reminder>("create_reminder", { eventId, remindAt, message });
+}
+
+async function snoozeReminder(reminderId: string, snoozeMinutes: number): Promise<void> {
+  return invoke<void>("snooze_reminder", { reminderId, snoozeMinutes });
+}
+
+async function dismissReminder(reminderId: string): Promise<void> {
+  return invoke<void>("dismiss_reminder", { reminderId });
+}
+
+async function listPendingReminders(): Promise<Reminder[]> {
+  return invoke<Reminder[]>("list_pending_reminders");
+}
+
+// ============ Settings API Functions ============
+
+async function getSetting(key: string): Promise<string | null> {
+  return invoke<string | null>("get_setting", { key });
+}
+
+async function setSetting(key: string, value: string): Promise<void> {
+  return invoke<void>("set_setting", { key, value });
+}
+
+async function listSettings(): Promise<[string, string][]> {
+  return invoke<[string, string][]>("list_settings");
+}
+
+// ============ Export API Functions (Phase 5) ============
+
+type DailyExport = {
+  id: string;
+  dateKey: string;
+  outputFormat: string;
+  outputPath: string;
+  createdAt: number;
+};
+
+async function generateDailyExport(dateKey: string, format: string): Promise<string> {
+  return invoke<string>("generate_daily_export", { dateKey, format });
+}
+
+async function listExports(): Promise<DailyExport[]> {
+  return invoke<DailyExport[]>("list_exports");
+}
+
+async function openExportFolder(): Promise<string> {
+  return invoke<string>("open_export_folder");
+}
+
+// ============ Reminder Due Payload Type ============
+type ReminderDuePayload = {
+  reminder: Reminder;
+  event: TimelineEvent;
+  attachments: Attachment[];
+};
+
 const BLINK_MIN_MS = 15000; /* 更频繁的眨眼，更可爱 */
 const BLINK_MAX_MS = 30000;
 const USE_MOCK = true;
@@ -113,7 +266,7 @@ async function getResponseText(
       remember: "Create memory summary"
     }[kind];
     
-    return `⚠️ API Key Required\n\nTo use the "${operationName}" feature, please configure your LLM API Key first.\n\nClick the "⚙️ Settings" button in the top right corner and enter your API Key.\n\nSupported providers:\n• OpenAI (GPT-3.5, GPT-4)\n• Anthropic (Claude)`;
+    return `⚠️ API Key Required\n\nPlease configure your LLM API Key to use "${operationName}".\n\nRight-click the pet and select "⚙️ Settings" to configure.\n\nSupported providers:\n• OpenAI (GPT-3.5, GPT-4)\n• Anthropic (Claude)`;
   }
 
   try {
@@ -339,6 +492,33 @@ export default function App() {
   const [chatStreamKey, setChatStreamKey] = useState(0);
   const chatInputRef = useRef<HTMLInputElement>(null);
   const chatImageRef = useRef<HTMLImageElement>(null);
+
+  // ============ Record Panel State (Phase 2) ============
+  const [recordPanelVisible, setRecordPanelVisible] = useState(false);
+  const [pendingDropPaths, setPendingDropPaths] = useState<string[]>([]);
+  const [recordNote, setRecordNote] = useState("");
+  const [recordRemindEnabled, setRecordRemindEnabled] = useState(false);
+  const [recordRemindAt, setRecordRemindAt] = useState<Date | null>(null);
+  const [currentTimelineEvent, setCurrentTimelineEvent] = useState<TimelineEventWithAttachments | null>(null);
+  const [recordSaving, setRecordSaving] = useState(false);
+  const recordNoteRef = useRef<HTMLTextAreaElement>(null);
+
+  // ============ Reminder Toast State (Phase 3) ============
+  const [activeReminder, setActiveReminder] = useState<ReminderDuePayload | null>(null);
+  const [reminderToastVisible, setReminderToastVisible] = useState(false);
+
+  // ============ Papa Space State (Phase 4) ============
+  const [papaSpaceVisible, setPapaSpaceVisible] = useState(false);
+  const [papaSpaceEvents, setPapaSpaceEvents] = useState<TimelineEventWithAttachments[]>([]);
+  const [papaSpaceSelectedDate, setPapaSpaceSelectedDate] = useState<string>(
+    new Date().toISOString().split("T")[0]
+  );
+  const [papaSpaceLoading, setPapaSpaceLoading] = useState(false);
+  const [papaSpaceEditingEvent, setPapaSpaceEditingEvent] = useState<TimelineEventWithAttachments | null>(null);
+  const [papaSpaceEditNote, setPapaSpaceEditNote] = useState("");
+  const [papaSpaceAISummary, setPapaSpaceAISummary] = useState<string>("");
+  const [papaSpaceAISummaryLoading, setPapaSpaceAISummaryLoading] = useState(false);
+  const [papaSpaceShowSummary, setPapaSpaceShowSummary] = useState(false);
 
   const panelRef = useRef<HTMLDivElement>(null);
   const idleTimeoutRef = useRef<number | null>(null);
@@ -636,7 +816,7 @@ export default function App() {
     const appWindow = getCurrentWindow();
 
     const unlistenDropEvent = appWindow.onDragDropEvent((event) => {
-      console.log("Tauri dragdrop event:", event.payload.type);
+      console.log("Tauri dragdrop event:", event.payload.type, "isMuted:", isMuted, "paths:", event.payload.paths);
       
       // 处理拖拽进入事件
       if (event.payload.type === "hover" || event.payload.type === "enter") {
@@ -674,7 +854,7 @@ export default function App() {
             eatChompTimeoutRef.current = null;
           }
           // 立即设置 eat_chomp 状态，确保动画能触发
-          console.log("Tauri drop detected, setting eat_chomp from", petState);
+          console.log("Tauri drop detected, setting eat_chomp");
           setPetState((currentState) => {
             // 如果当前是 waiting_for_drop，转换为 eat_chomp
             if (currentState === "waiting_for_drop" || currentState === "idle_breathe") {
@@ -684,55 +864,45 @@ export default function App() {
           });
           // 记录 drop 开始时间
           const dropStartTime = Date.now();
-          
+
           const paths = event.payload.paths;
           if (paths && paths.length > 0) {
-            void (async () => {
-              try {
-                const payload = await invoke<DropProcessedPayload>(
-                  "process_drop_paths_command",
-                  { paths }
-                );
-                setDropRecord(payload.record);
-                setPanelVisible(true);
-                setPanelLockUntil(Date.now() + 600);
-                setPanelMode(null);
-                setPanelText("");
-                // Close chat dialog if open
-                setChatDialogVisible(false);
-                setChatInput("");
-                setChatImage(null);
-                setChatAction(null);
-                setChatResult("");
-                setChatResultExpanded(false);
-                // 确保 eat_chomp 状态持续至少 1000ms（动画时长）
-                // 计算已经过去的时间，确保总共持续 1000ms
-                const elapsed = Date.now() - dropStartTime;
-                const remaining = Math.max(1000 - elapsed, 200); // 至少再等 200ms
-                eatChompTimeoutRef.current = window.setTimeout(() => {
-                  setPetState("idle_breathe");
-                  eatChompTimeoutRef.current = null;
-                }, Math.max(remaining, 1000)); // 确保至少1000ms以匹配新的动画时长
-              } catch (error) {
-                console.error(error);
-                // 出错时也要确保 eat_chomp 状态持续足够时间
-                const elapsed = Date.now() - dropStartTime;
-                const remaining = Math.max(1000 - elapsed, 200);
-                eatChompTimeoutRef.current = window.setTimeout(() => {
-                  setPetState("error_confused");
-                  eatChompTimeoutRef.current = window.setTimeout(() => {
-                    setPetState("idle_breathe");
-                    eatChompTimeoutRef.current = null;
-                  }, 1200);
-                }, remaining);
-              }
-            })();
+            // 保存待记录的路径，显示记录面板
+            setPendingDropPaths(paths);
+            setRecordNote("");
+            setRecordRemindEnabled(false);
+            setRecordRemindAt(null);
+
+            // Close other panels
+            setPanelVisible(false);
+            setChatDialogVisible(false);
+            setSettingsVisible(false);
+            setPapaSpaceVisible(false);
+            setReminderToastVisible(false);
+            setChatInput("");
+            setChatImage(null);
+            setChatAction(null);
+            setChatResult("");
+            setChatResultExpanded(false);
+
+            // 确保 eat_chomp 状态持续至少 1000ms（动画时长），然后显示记录面板
+            const elapsed = Date.now() - dropStartTime;
+            const remaining = Math.max(1000 - elapsed, 200);
+            eatChompTimeoutRef.current = window.setTimeout(() => {
+              setPetState("idle_breathe");
+              setRecordPanelVisible(true);
+              // Focus note input
+              setTimeout(() => {
+                recordNoteRef.current?.focus();
+              }, 100);
+              eatChompTimeoutRef.current = null;
+            }, Math.max(remaining, 1000));
           } else {
             // 如果没有路径，也要确保 eat_chomp 状态能显示
             eatChompTimeoutRef.current = window.setTimeout(() => {
               setPetState("idle_breathe");
               eatChompTimeoutRef.current = null;
-            }, 1000); // 匹配新的动画时长
+            }, 1000);
           }
         }
       }
@@ -740,13 +910,8 @@ export default function App() {
 
     return () => {
       void unlistenDropEvent.then((f) => f());
-      // 清理 eat_chomp timeout
-      if (eatChompTimeoutRef.current) {
-        window.clearTimeout(eatChompTimeoutRef.current);
-        eatChompTimeoutRef.current = null;
-      }
     };
-  }, [isMuted, petState]);
+  }, [isMuted]);
 
   useEffect(() => {
     console.log("Setting up drag event listeners, isMuted:", isMuted);
@@ -974,6 +1139,35 @@ export default function App() {
     };
   }, [isMuted, userMood]);
 
+  // Listen to reminder-due events (Phase 3)
+  useEffect(() => {
+    const unlisten = listen<ReminderDuePayload>("reminder-due", (event) => {
+      const payload = event.payload;
+      console.log("Reminder due:", payload);
+
+      // Close other panels first
+      setPanelVisible(false);
+      setChatDialogVisible(false);
+      setSettingsVisible(false);
+      setRecordPanelVisible(false);
+      setPapaSpaceVisible(false);
+
+      // Show reminder panel
+      setActiveReminder(payload);
+      setReminderToastVisible(true);
+
+      // Trigger excited animation
+      if (!isMuted) {
+        setPetState("excited");
+        gsapStateRef.current?.setState("excited");
+      }
+    });
+
+    return () => {
+      unlisten.then(fn => fn());
+    };
+  }, [isMuted]);
+
   // Trigger proactive conversation based on mood
   useEffect(() => {
     if (isMuted || !userMood || panelVisible) return;
@@ -1117,12 +1311,12 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
   useEffect(() => {
     // Determine target window size based on state
     let next;
-    if (panelVisible || settingsVisible || chatDialogVisible) {
-      next = WINDOW_EXPANDED; // Full expansion when panel, settings, or chat dialog is visible
+    if (panelVisible || settingsVisible || chatDialogVisible || recordPanelVisible || papaSpaceVisible || reminderToastVisible) {
+      next = WINDOW_EXPANDED; // Full expansion when any panel is visible
     } else {
       next = WINDOW_COLLAPSED; // Collapsed when idle
     }
-    
+
     // Only resize if size actually changed
     if (currentWindowSize.width === next.width && currentWindowSize.height === next.height) {
       return;
@@ -1147,7 +1341,7 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
       ...prev,
       lastResize: `${next.width}x${next.height}`
     }));
-  }, [panelVisible, settingsVisible, chatDialogVisible, currentWindowSize]);
+  }, [panelVisible, settingsVisible, chatDialogVisible, recordPanelVisible, papaSpaceVisible, reminderToastVisible, currentWindowSize]);
 
 
   // Update CSS variable on window resize
@@ -1549,9 +1743,16 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
 
   function handleAction(kind: "summarize" | "actions" | "remember") {
     if (!dropRecord) return;
-    
+
     // Check if API key is configured, if not, open settings panel
     if (!llmSettings.apiKey) {
+      // Close other panels first
+      setPanelVisible(false);
+      setChatDialogVisible(false);
+      setRecordPanelVisible(false);
+      setPapaSpaceVisible(false);
+      setReminderToastVisible(false);
+
       setSettingsVisible(true);
       setPanelMode(null);
       setPanelText("");
@@ -1648,6 +1849,13 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
   // Handle chat action
   const handleChatAction = async (action: "explain" | "save" | "reply_email") => {
     if (!llmSettings.apiKey) {
+      // Close other panels first
+      setPanelVisible(false);
+      setChatDialogVisible(false);
+      setRecordPanelVisible(false);
+      setPapaSpaceVisible(false);
+      setReminderToastVisible(false);
+
       setSettingsVisible(true);
       return;
     }
@@ -1711,6 +1919,361 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
     }
   };
 
+  // ============ Reminder Toast Functions (Phase 3) ============
+
+  // Handle reminder dismiss (complete)
+  const handleReminderDismiss = async () => {
+    if (!activeReminder) return;
+
+    try {
+      await dismissReminder(activeReminder.reminder.id);
+      setReminderToastVisible(false);
+      setActiveReminder(null);
+      setPetState("success_happy");
+      gsapStateRef.current?.setState("happy");
+      setTimeout(() => {
+        setPetState("idle_breathe");
+      }, 1000);
+    } catch (error) {
+      console.error("Failed to dismiss reminder:", error);
+    }
+  };
+
+  // Handle reminder snooze
+  const handleReminderSnooze = async (minutes: number) => {
+    if (!activeReminder) return;
+
+    try {
+      await snoozeReminder(activeReminder.reminder.id, minutes);
+      setReminderToastVisible(false);
+      setActiveReminder(null);
+      setPetState("comfy");
+      gsapStateRef.current?.setState("comfy");
+      setTimeout(() => {
+        setPetState("idle_breathe");
+      }, 800);
+    } catch (error) {
+      console.error("Failed to snooze reminder:", error);
+    }
+  };
+
+  // Handle reminder open (view details)
+  const handleReminderOpen = () => {
+    // Open Papa Space with event details
+    setReminderToastVisible(false);
+    if (activeReminder) {
+      void openPapaSpace();
+      // Select the date of the reminder event
+      const eventDate = new Date(activeReminder.event.createdAt).toISOString().split("T")[0];
+      setPapaSpaceSelectedDate(eventDate);
+    }
+    setPetState("idle_breathe");
+  };
+
+  // ============ Papa Space Functions (Phase 4) ============
+
+  // Open Papa Space
+  const openPapaSpace = async () => {
+    console.log("Opening Papa Space...");
+    // Close other panels
+    setPanelVisible(false);
+    setChatDialogVisible(false);
+    setSettingsVisible(false);
+    setRecordPanelVisible(false);
+    setReminderToastVisible(false);
+
+    setPapaSpaceVisible(true);
+    try {
+      await loadPapaSpaceEvents(papaSpaceSelectedDate);
+    } catch (error) {
+      console.error("Failed to load Papa Space events:", error);
+    }
+  };
+
+  // Load events for selected date
+  const loadPapaSpaceEvents = async (dateKey: string) => {
+    console.log("Loading Papa Space events for:", dateKey);
+    setPapaSpaceLoading(true);
+    try {
+      // Calculate start and end of day in local timezone
+      const startOfDay = new Date(dateKey + "T00:00:00").getTime();
+      const endOfDay = new Date(dateKey + "T23:59:59.999").getTime();
+      console.log("Date range:", startOfDay, "to", endOfDay);
+
+      const events = await listEvents({
+        startDate: startOfDay,
+        endDate: endOfDay,
+        pageSize: 100,
+      });
+
+      console.log("Loaded events:", events.length);
+      setPapaSpaceEvents(events);
+    } catch (error) {
+      console.error("Failed to load events:", error);
+      setPapaSpaceEvents([]);
+    } finally {
+      setPapaSpaceLoading(false);
+    }
+  };
+
+  // Handle date selection
+  const handlePapaSpaceDateChange = async (dateKey: string) => {
+    setPapaSpaceSelectedDate(dateKey);
+    setPapaSpaceShowSummary(false);
+    setPapaSpaceAISummary("");
+    await loadPapaSpaceEvents(dateKey);
+  };
+
+  // Get recent dates (last 14 days)
+  const getRecentDates = (): string[] => {
+    const dates: string[] = [];
+    const today = new Date();
+    for (let i = 0; i < 14; i++) {
+      const date = new Date(today);
+      date.setDate(today.getDate() - i);
+      dates.push(date.toISOString().split("T")[0]);
+    }
+    return dates;
+  };
+
+  // Format date for display
+  const formatDateDisplay = (dateKey: string): string => {
+    const date = new Date(dateKey + "T00:00:00");
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+
+    if (dateKey === today.toISOString().split("T")[0]) {
+      return "Today";
+    }
+    if (dateKey === yesterday.toISOString().split("T")[0]) {
+      return "Yesterday";
+    }
+    return `${date.getMonth() + 1}/${date.getDate()}`;
+  };
+
+  // Format time for display
+  const formatTimeDisplay = (timestamp: number): string => {
+    const date = new Date(timestamp);
+    return `${date.getHours().toString().padStart(2, "0")}:${date.getMinutes().toString().padStart(2, "0")}`;
+  };
+
+  // Start editing event
+  const startEditEvent = (event: TimelineEventWithAttachments) => {
+    setPapaSpaceEditingEvent(event);
+    setPapaSpaceEditNote(event.event.note || "");
+  };
+
+  // Save event edit
+  const saveEventEdit = async () => {
+    if (!papaSpaceEditingEvent) return;
+
+    try {
+      await updateEventNote(papaSpaceEditingEvent.event.id, papaSpaceEditNote);
+      // Reload events
+      await loadPapaSpaceEvents(papaSpaceSelectedDate);
+      setPapaSpaceEditingEvent(null);
+      setPapaSpaceEditNote("");
+    } catch (error) {
+      console.error("Failed to save event:", error);
+    }
+  };
+
+  // Delete event
+  const handleDeleteEvent = async (eventId: string) => {
+    try {
+      await deleteEvent(eventId);
+      await loadPapaSpaceEvents(papaSpaceSelectedDate);
+    } catch (error) {
+      console.error("Failed to delete event:", error);
+    }
+  };
+
+  // Close Papa Space
+  const closePapaSpace = () => {
+    setPapaSpaceVisible(false);
+    setPapaSpaceEditingEvent(null);
+    setPapaSpaceEditNote("");
+    setPapaSpaceShowSummary(false);
+    setPapaSpaceAISummary("");
+  };
+
+  // Export current day
+  const handleExportDay = async (format: "md" | "html") => {
+    try {
+      setPetState("thinking");
+      const outputPath = await generateDailyExport(papaSpaceSelectedDate, format);
+      console.log("Export saved to:", outputPath);
+      setPetState("success_happy");
+      setTimeout(() => setPetState("idle_breathe"), 1000);
+    } catch (error) {
+      console.error("Failed to export:", error);
+      setPetState("error_confused");
+      setTimeout(() => setPetState("idle_breathe"), 1000);
+    }
+  };
+
+  // Open exports folder
+  const handleOpenExportsFolder = async () => {
+    try {
+      const folderPath = await openExportFolder();
+      console.log("Exports folder:", folderPath);
+    } catch (error) {
+      console.error("Failed to get exports folder:", error);
+    }
+  };
+
+  // Generate AI summary for the day
+  const handleGenerateAISummary = async () => {
+    if (!llmSettings.apiKey) {
+      // Close other panels and open settings
+      setPapaSpaceVisible(false);
+      setSettingsVisible(true);
+      return;
+    }
+
+    if (papaSpaceEvents.length === 0) {
+      setPapaSpaceAISummary("No records today. Start capturing some thoughts!");
+      setPapaSpaceShowSummary(true);
+      return;
+    }
+
+    setPapaSpaceAISummaryLoading(true);
+    setPapaSpaceShowSummary(true);
+    setPapaSpaceAISummary("");
+    setPetState("thinking");
+
+    try {
+      // Build context from today's events
+      const eventsContext = papaSpaceEvents.map((item, index) => {
+        const time = new Date(item.event.createdAt).toLocaleTimeString("zh-CN", {
+          hour: "2-digit",
+          minute: "2-digit"
+        });
+        const typeIcon = item.event.type === "image" ? "Image" : item.event.type === "text" ? "Text" : "File";
+        const title = item.event.title || "Untitled";
+        const note = item.event.note || "";
+        const attachments = item.attachments.map(a => a.fileName).join(", ");
+
+        let entry = `[${time}] ${typeIcon}: ${title}`;
+        if (note) entry += ` - "${note}"`;
+        return entry;
+      }).join("\n");
+
+      const prompt = `You are a personal thought assistant. The user recorded these sparks of ideas today:
+
+${eventsContext}
+
+Provide a brief summary (max 150 words) with:
+🎯 **Theme**: Main focus of the day (1 sentence)
+💡 **Insight**: Key takeaway or pattern (1 sentence)
+🌟 **Next**: One actionable suggestion (1 sentence)
+
+Keep it warm and concise. If few records, just give a simple reflection.`;
+
+      const result = await invoke<string>("call_llm_api", {
+        request: {
+          provider: llmSettings.provider,
+          apiKey: llmSettings.apiKey,
+          model: llmSettings.model,
+          prompt: prompt,
+          maxTokens: 300
+        }
+      });
+
+      setPapaSpaceAISummary(result);
+      setPetState("success_happy");
+      setTimeout(() => setPetState("idle_breathe"), 1500);
+    } catch (error) {
+      console.error("Failed to generate AI summary:", error);
+      setPapaSpaceAISummary("Failed to generate summary. Please try again.");
+      setPetState("error_confused");
+      setTimeout(() => setPetState("idle_breathe"), 1500);
+    } finally {
+      setPapaSpaceAISummaryLoading(false);
+    }
+  };
+
+  // ============ Record Panel Functions (Phase 2) ============
+
+  // Save record to timeline
+  const handleSaveRecord = async () => {
+    if (pendingDropPaths.length === 0) return;
+
+    setRecordSaving(true);
+    setPetState("thinking");
+
+    try {
+      // Calculate remind_at timestamp if enabled
+      let remindAt: number | undefined;
+      if (recordRemindEnabled && recordRemindAt) {
+        remindAt = recordRemindAt.getTime();
+      }
+
+      const result = await createDropEvent({
+        paths: pendingDropPaths,
+        note: recordNote.trim() || undefined,
+        remindAt,
+        remindMessage: recordNote.trim() || undefined,
+      });
+
+      setCurrentTimelineEvent(result);
+      setPetState("success_happy");
+
+      // Close panel after success
+      setTimeout(() => {
+        setRecordPanelVisible(false);
+        setPendingDropPaths([]);
+        setRecordNote("");
+        setRecordRemindEnabled(false);
+        setRecordRemindAt(null);
+        setCurrentTimelineEvent(null);
+        setPetState("idle_breathe");
+      }, 800);
+    } catch (error) {
+      console.error("Failed to save record:", error);
+      setPetState("error_confused");
+      setTimeout(() => setPetState("idle_breathe"), 1200);
+    } finally {
+      setRecordSaving(false);
+    }
+  };
+
+  // Cancel record and close panel
+  const handleCancelRecord = () => {
+    setRecordPanelVisible(false);
+    setPendingDropPaths([]);
+    setRecordNote("");
+    setRecordRemindEnabled(false);
+    setRecordRemindAt(null);
+    setPetState("idle_breathe");
+  };
+
+  // Quick remind options
+  const handleQuickRemind = (minutes: number) => {
+    setRecordRemindEnabled(true);
+    const remindTime = new Date(Date.now() + minutes * 60 * 1000);
+    setRecordRemindAt(remindTime);
+  };
+
+  // Format file name for display
+  const getFileDisplayName = (path: string): string => {
+    const parts = path.split(/[\\/]/);
+    return parts[parts.length - 1] || path;
+  };
+
+  // Format remind time for display
+  const formatRemindTime = (date: Date | null): string => {
+    if (!date) return "";
+    const now = new Date();
+    const diff = date.getTime() - now.getTime();
+    const minutes = Math.round(diff / 60000);
+
+    if (minutes < 60) return `in ${minutes}m`;
+    if (minutes < 1440) return `in ${Math.round(minutes / 60)}h`;
+    return `in ${Math.round(minutes / 1440)}d`;
+  };
+
   // Reset to initial state function (for pet click)
   const resetToInitialOnClick = () => {
     setPanelVisible(false);
@@ -1726,7 +2289,13 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
     setChatAction(null);
     setChatResult("");
     setChatResultExpanded(false);
-    
+    // Close record panel
+    setRecordPanelVisible(false);
+    setPendingDropPaths([]);
+    setRecordNote("");
+    setRecordRemindEnabled(false);
+    setRecordRemindAt(null);
+
     // Clear any pending timeouts
     if (successHappyTimeoutRef.current) {
       window.clearTimeout(successHappyTimeoutRef.current);
@@ -1736,7 +2305,7 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
       window.clearTimeout(eatChompTimeoutRef.current);
       eatChompTimeoutRef.current = null;
     }
-    
+
     if (gsapStateRef.current) {
       gsapStateRef.current.resetToNeutral();
       gsapStateRef.current.startIdleLoops();
@@ -1747,6 +2316,8 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
     <div
       className={`app-root state-${activeState}`}
       onPointerDown={(event: React.PointerEvent<HTMLDivElement>) => {
+        // Ignore right-click (button 2) - let context menu handle it
+        if (event.button === 2) return;
         const target = event.target as HTMLElement;
         if (target.closest("[data-no-drag]")) return;
         if (target.closest(".pet-wrapper")) {
@@ -1760,6 +2331,8 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
         }
       }}
       onPointerUp={(event: React.PointerEvent<HTMLDivElement>) => {
+        // Ignore right-click (button 2) - let context menu handle it
+        if (event.button === 2) return;
         const target = event.target as HTMLElement;
         if (target.closest("[data-no-drag]")) return;
         if (target.closest(".pet-wrapper") && petClickStartRef.current) {
@@ -1776,10 +2349,14 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
             if (chatDialogVisible) {
               resetToInitialOnClick();
             }
-            // If in initial state (no panel, no settings, no chat dialog), show chat dialog
-            else if (!panelVisible && !settingsVisible && !chatDialogVisible && petState === "idle_breathe") {
-              // Close file panel if open
+            // If in initial state (no other panels open), show chat dialog
+            else if (!panelVisible && !settingsVisible && !chatDialogVisible && !recordPanelVisible && !papaSpaceVisible && !reminderToastVisible && petState === "idle_breathe") {
+              // Close all other panels first
               setPanelVisible(false);
+              setSettingsVisible(false);
+              setRecordPanelVisible(false);
+              setPapaSpaceVisible(false);
+              setReminderToastVisible(false);
               setPanelMode(null);
               setPanelText("");
               setDropRecord(null);
@@ -1860,12 +2437,13 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
       }}
       onContextMenu={(event: React.MouseEvent<HTMLDivElement>) => {
         event.preventDefault();
+        console.log("Context menu opened at:", event.clientX, event.clientY);
         setContextMenu({ x: event.clientX, y: event.clientY, visible: true });
       }}
     >
       <div
-        className={`pet-stage ${panelVisible || settingsVisible || chatDialogVisible ? "panel-open" : ""} ${
-          (panelVisible || settingsVisible || chatDialogVisible) && !isExpanded ? "panel-fallback" : ""
+        className={`pet-stage ${panelVisible || settingsVisible || chatDialogVisible || recordPanelVisible || papaSpaceVisible || reminderToastVisible ? "panel-open" : ""} ${
+          (panelVisible || settingsVisible || chatDialogVisible || recordPanelVisible || papaSpaceVisible || reminderToastVisible) && !isExpanded ? "panel-fallback" : ""
         }`}
       >
         <div className="pet-drag-hint">Drop files here</div>
@@ -2173,6 +2751,342 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
             </div>
           </div>
         )}
+        {recordPanelVisible && (
+          <div className="bubble-panel record-panel" data-no-drag>
+            <div className="bubble-header">
+              <span>📝 Record</span>
+              <button
+                className="close-button"
+                onClick={handleCancelRecord}
+                data-no-drag
+              >
+                ×
+              </button>
+            </div>
+            <div className="record-content">
+              {/* File preview */}
+              <div className="record-files">
+                {pendingDropPaths.map((path, index) => (
+                  <div key={index} className="record-file-item">
+                    <span className="record-file-icon">
+                      {path.match(/\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i) ? "🖼️" : "📄"}
+                    </span>
+                    <span className="record-file-name">{getFileDisplayName(path)}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Note input */}
+              <div className="record-note-section">
+                <textarea
+                  ref={recordNoteRef}
+                  value={recordNote}
+                  onChange={(e) => setRecordNote(e.target.value)}
+                  placeholder="Add a note..."
+                  className="record-note-input"
+                  rows={2}
+                  data-no-drag
+                />
+              </div>
+
+              {/* Remind toggle */}
+              <div className="record-remind-section">
+                <label className="record-remind-toggle">
+                  <input
+                    type="checkbox"
+                    checked={recordRemindEnabled}
+                    onChange={(e) => {
+                      setRecordRemindEnabled(e.target.checked);
+                      if (!e.target.checked) {
+                        setRecordRemindAt(null);
+                      }
+                    }}
+                    data-no-drag
+                  />
+                  <span>⏰ Remind me</span>
+                </label>
+
+                {recordRemindEnabled && (
+                  <div className="record-remind-options">
+                    <div className="record-remind-quick">
+                      <button onClick={() => handleQuickRemind(10)} data-no-drag>10分钟</button>
+                      <button onClick={() => handleQuickRemind(60)} data-no-drag>1小时</button>
+                      <button onClick={() => handleQuickRemind(60 * 24)} data-no-drag>Tomorrow</button>
+                      <button onClick={() => handleQuickRemind(60 * 24 * 3)} data-no-drag>3 days</button>
+                    </div>
+                    {recordRemindAt && (
+                      <div className="record-remind-time">
+                        {formatRemindTime(recordRemindAt)}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Action buttons */}
+              <div className="record-actions">
+                <button
+                  className="record-cancel-button"
+                  onClick={handleCancelRecord}
+                  disabled={recordSaving}
+                  data-no-drag
+                >
+                  Cancel
+                </button>
+                <button
+                  className="record-save-button"
+                  onClick={handleSaveRecord}
+                  disabled={recordSaving}
+                  data-no-drag
+                >
+                  {recordSaving ? "Saving..." : "Save"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* Reminder Panel (Phase 3) */}
+        {reminderToastVisible && activeReminder && (
+          <div className="bubble-panel reminder-panel" data-no-drag>
+            <div className="bubble-header">
+              <span>⏰ Reminder</span>
+              <button
+                className="close-button"
+                onClick={() => {
+                  setReminderToastVisible(false);
+                  setPetState("idle_breathe");
+                }}
+                data-no-drag
+              >
+                ×
+              </button>
+            </div>
+            <div className="reminder-panel-content">
+              <p className="reminder-panel-message">{activeReminder.reminder.message}</p>
+              {activeReminder.attachments.length > 0 && (
+                <div className="reminder-panel-attachment">
+                  <span className="reminder-panel-attachment-icon">
+                    {activeReminder.event.type === "image" ? "🖼️" : "📄"}
+                  </span>
+                  <span className="reminder-panel-attachment-name">
+                    {activeReminder.attachments[0].fileName || "Attachment"}
+                  </span>
+                </div>
+              )}
+            </div>
+            <div className="reminder-panel-actions">
+              <button
+                className="reminder-panel-done"
+                onClick={handleReminderDismiss}
+                data-no-drag
+              >
+                ✅ Done
+              </button>
+              <div className="reminder-panel-snooze-group">
+                <button
+                  className="reminder-panel-snooze"
+                  onClick={() => handleReminderSnooze(10)}
+                  data-no-drag
+                >
+                  10 min
+                </button>
+                <button
+                  className="reminder-panel-snooze"
+                  onClick={() => handleReminderSnooze(60)}
+                  data-no-drag
+                >
+                  1 hour
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* Papa Space (Phase 4) */}
+        {papaSpaceVisible && (
+          <div className="bubble-panel papa-space" data-no-drag>
+            <div className="bubble-header">
+              <span>📋 Papa Space</span>
+              <button
+                className="close-button"
+                onClick={closePapaSpace}
+                data-no-drag
+              >
+                ×
+              </button>
+            </div>
+            <div className="papa-space-content">
+              {/* Action buttons */}
+              <div className="papa-space-export-bar">
+                <button
+                  className="papa-space-ai-btn"
+                  onClick={() => void handleGenerateAISummary()}
+                  disabled={papaSpaceAISummaryLoading}
+                  data-no-drag
+                >
+                  {papaSpaceAISummaryLoading ? "✨ Thinking..." : "✨ AI Summary"}
+                </button>
+                <div className="papa-space-export-group">
+                  <button
+                    className="papa-space-export-btn"
+                    onClick={() => handleExportDay("md")}
+                    data-no-drag
+                  >
+                    📄 MD
+                  </button>
+                  <button
+                    className="papa-space-export-btn"
+                    onClick={() => handleExportDay("html")}
+                    data-no-drag
+                  >
+                    🌐 HTML
+                  </button>
+                  <button
+                    className="papa-space-export-btn"
+                    onClick={() => void handleOpenExportsFolder()}
+                    data-no-drag
+                  >
+                    📁
+                  </button>
+                </div>
+              </div>
+
+              {/* Date selector */}
+              <div className="papa-space-dates">
+                {getRecentDates().map((dateKey) => (
+                  <button
+                    key={dateKey}
+                    className={`papa-space-date-btn ${dateKey === papaSpaceSelectedDate ? "active" : ""}`}
+                    onClick={() => handlePapaSpaceDateChange(dateKey)}
+                    data-no-drag
+                  >
+                    {formatDateDisplay(dateKey)}
+                  </button>
+                ))}
+              </div>
+
+              {/* AI Summary */}
+              {papaSpaceShowSummary && (
+                <div className="papa-space-ai-summary" data-no-drag>
+                  <div className="papa-space-ai-summary-header">
+                    <span>✨ Daily Summary</span>
+                    <button
+                      className="papa-space-ai-summary-close"
+                      onClick={() => setPapaSpaceShowSummary(false)}
+                      data-no-drag
+                    >
+                      ×
+                    </button>
+                  </div>
+                  <div className="papa-space-ai-summary-content">
+                    {papaSpaceAISummaryLoading ? (
+                      <div className="papa-space-ai-summary-loading">
+                        <span className="loading-dots">Thinking</span>
+                      </div>
+                    ) : (
+                      <div className="papa-space-ai-summary-text">
+                        {papaSpaceAISummary.split('\n').map((line, i) => (
+                          <p key={i}>{line}</p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Timeline */}
+              <div className="papa-space-timeline">
+                {papaSpaceLoading ? (
+                  <div className="papa-space-loading">Loading...</div>
+                ) : papaSpaceEvents.length === 0 ? (
+                  <div className="papa-space-empty">No records for this day</div>
+                ) : (
+                  papaSpaceEvents.map((item) => (
+                    <div key={item.event.id} className="papa-space-event">
+                      <div className="papa-space-event-time">
+                        {formatTimeDisplay(item.event.createdAt)}
+                      </div>
+                      <div className="papa-space-event-content">
+                        <div className="papa-space-event-header">
+                          <span className="papa-space-event-icon">
+                            {item.event.type === "image" ? "🖼️" : item.event.type === "text" ? "📝" : "📄"}
+                          </span>
+                          <span className="papa-space-event-title">
+                            {item.event.title || item.event.note?.slice(0, 20) || "Untitled"}
+                          </span>
+                          <div className="papa-space-event-actions">
+                            <button
+                              className="papa-space-event-edit"
+                              onClick={() => startEditEvent(item)}
+                              data-no-drag
+                            >
+                              ✏️
+                            </button>
+                            <button
+                              className="papa-space-event-delete"
+                              onClick={() => handleDeleteEvent(item.event.id)}
+                              data-no-drag
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                        </div>
+                        {item.event.note && (
+                          <p className="papa-space-event-note">{item.event.note}</p>
+                        )}
+                        {item.attachments.length > 0 && (
+                          <div className="papa-space-event-attachments">
+                            {item.attachments.map((att) => (
+                              <span key={att.id} className="papa-space-attachment">
+                                {att.kind === "image" ? "🖼️" : "📎"} {att.fileName}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {item.reminders.length > 0 && (
+                          <div className="papa-space-event-reminders">
+                            {item.reminders.map((rem) => (
+                              <span key={rem.id} className={`papa-space-reminder ${rem.status}`}>
+                                ⏰ {rem.status === "pending" ? "pending" : rem.status === "dismissed" ? "done" : rem.status}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Edit modal */}
+              {papaSpaceEditingEvent && (
+                <div className="papa-space-edit-modal">
+                  <div className="papa-space-edit-header">Edit Note</div>
+                  <textarea
+                    value={papaSpaceEditNote}
+                    onChange={(e) => setPapaSpaceEditNote(e.target.value)}
+                    className="papa-space-edit-input"
+                    rows={3}
+                    data-no-drag
+                  />
+                  <div className="papa-space-edit-actions">
+                    <button
+                      onClick={() => {
+                        setPapaSpaceEditingEvent(null);
+                        setPapaSpaceEditNote("");
+                      }}
+                      data-no-drag
+                    >
+                      Cancel
+                    </button>
+                    <button onClick={saveEventEdit} data-no-drag>
+                      Save
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
       <div className="state-label">{activeState}</div>
       <div className="pet-controls">
@@ -2194,6 +3108,13 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
           className="debug-toggle"
           data-no-drag
           onClick={() => {
+            // Close other panels first
+            setChatDialogVisible(false);
+            setSettingsVisible(false);
+            setRecordPanelVisible(false);
+            setPapaSpaceVisible(false);
+            setReminderToastVisible(false);
+
             setDropRecord({
               id: 0,
               path: "demo.txt",
@@ -2220,13 +3141,6 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
           }}
         >
           Test waiting
-        </button>
-        <button
-          className="settings-toggle"
-          data-no-drag
-          onClick={() => setSettingsVisible((prev) => !prev)}
-        >
-          ⚙️ Settings
         </button>
       </div>
 
@@ -2291,18 +3205,47 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
           className="context-menu"
           style={{ left: contextMenu.x, top: contextMenu.y }}
           data-no-drag
+          onPointerDown={(e) => e.stopPropagation()}
         >
+          <button
+            onClick={() => {
+              setContextMenu({ ...contextMenu, visible: false });
+              void openPapaSpace();
+            }}
+          >
+            📋 Papa Space
+          </button>
+          <button
+            onClick={() => {
+              setContextMenu({ ...contextMenu, visible: false });
+              // Close other panels first
+              setPanelVisible(false);
+              setChatDialogVisible(false);
+              setRecordPanelVisible(false);
+              setPapaSpaceVisible(false);
+              setReminderToastVisible(false);
+              setSettingsVisible(true);
+            }}
+          >
+            ⚙️ Settings
+          </button>
           <button onClick={() => setIsMuted((prev) => !prev)}>
-            {isMuted ? "Wake" : "Sleep"}
+            {isMuted ? "🔔 Wake" : "😴 Sleep"}
           </button>
           <button
             onClick={async () => {
+              setContextMenu({ ...contextMenu, visible: false });
               await invoke("hide_for", { ms: 10000 });
             }}
           >
-            Hide 10s
+            👻 Hide 10s
           </button>
-          <button onClick={() => void appWindow.close()}>Quit</button>
+          <button
+            onClick={() => void appWindow.close()}
+            className="context-menu-quit"
+          >
+            ❌ Quit
+          </button>
         </div>
       )}
 
