@@ -1,0 +1,72 @@
+import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+
+type ContextMenuProps = {
+  x: number;
+  y: number;
+  visible: boolean;
+  isMuted: boolean;
+  onClose: () => void;
+  onOpenPapaSpace: () => void;
+  onOpenSettings: () => void;
+  onToggleMute: () => void;
+};
+
+export function ContextMenu({
+  x,
+  y,
+  visible,
+  isMuted,
+  onClose,
+  onOpenPapaSpace,
+  onOpenSettings,
+  onToggleMute,
+}: ContextMenuProps) {
+  if (!visible) return null;
+
+  const appWindow = getCurrentWindow();
+
+  const handleHide = async () => {
+    onClose();
+    await invoke("hide_for", { ms: 10000 });
+  };
+
+  const handleQuit = () => {
+    void appWindow.close();
+  };
+
+  return (
+    <div
+      className="context-menu"
+      style={{ left: x, top: y }}
+      data-no-drag
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <button
+        onClick={() => {
+          onClose();
+          onOpenPapaSpace();
+        }}
+      >
+        📋 Papa Space
+      </button>
+      <button
+        onClick={() => {
+          onClose();
+          onOpenSettings();
+        }}
+      >
+        ⚙️ Settings
+      </button>
+      <button onClick={onToggleMute}>
+        {isMuted ? "🔔 Wake" : "😴 Sleep"}
+      </button>
+      <button onClick={() => void handleHide()}>
+        👻 Hide 10s
+      </button>
+      <button onClick={handleQuit} className="context-menu-quit">
+        ❌ Quit
+      </button>
+    </div>
+  );
+}

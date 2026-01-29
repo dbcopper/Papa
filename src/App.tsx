@@ -5,252 +5,55 @@ import { listen } from "@tauri-apps/api/event";
 import { gsap } from "gsap";
 import { MorphSVGPlugin } from "gsap/MorphSVGPlugin";
 
-const PET_LAYER_SRC = "/assets/pet-placeholder.png";
+// Import from new modules
+import type {
+  PetState,
+  BehaviorAnalysis,
+  UserMood,
+  LlmSettings,
+  TimelineEventWithAttachments,
+  Reminder,
+  ReminderDuePayload,
+  WindowSize,
+} from "./types";
 
-type PetState =
-  | "idle_breathe"
-  | "idle_blink"
-  | "eat_chomp"
-  | "thinking"
-  | "success_happy"
-  | "error_confused"
-  | "waiting_for_drop"
-  | "idle"
-  | "think"
-  | "happy"
-  | "comfy"
-  | "shy"
-  | "cry"
-  | "drool"
-  | "excited"
-  | "tired"
-  | "angry"
-  | "surprised"
-  | "sleepy"
-  | "chew"
-  | "eat_action";
+import {
+  PET_LAYER_SRC,
+  USE_MOCK,
+  MOOD_CHECK_INTERVAL,
+  CONVERSATION_COOLDOWN,
+  DEFAULT_LLM_SETTINGS,
+  LLM_MODELS,
+  WINDOW_COLLAPSED,
+  WINDOW_EXPANDED,
+  getRandomBlinkDelay,
+} from "./constants";
 
-type DropRecord = {
-  id: number;
-  path: string;
-  hash: string;
-  createdAt: number;
-};
+import {
+  saveDroppedFile,
+  listEvents,
+  listPendingReminders,
+  getSetting,
+  setSetting,
+  generateDailyExport,
+  openExportFolder,
+  callLlmApi,
+} from "./services/api";
 
-type DropProcessedPayload = {
-  record: DropRecord;
-};
+import {
+  formatLocalDate,
+  getFileDisplayName,
+  isImageFile,
+} from "./utils/helpers";
 
-type BehaviorAnalysis = {
-  typingSpeed: number;
-  keyPressCount: number;
-  backspaceCount: number;
-  mouseMoveSpeed: number;
-  mouseClickCount: number;
-  idleTime: number;
-  activityLevel: number;
-};
-
-type UserMood = "focused" | "tired" | "excited" | "confused" | "relaxed" | null;
-
-type ConversationBubble = {
-  id: number;
-  text: string;
-  visible: boolean;
-};
-
-type LlmSettings = {
-  provider: "openai" | "anthropic";
-  apiKey: string;
-  model: string;
-};
-
-// ============ Timeline Types ============
-
-type TimelineEvent = {
-  id: string;
-  type: "file" | "image" | "text" | "thought";
-  title: string | null;
-  note: string | null;
-  textContent: string | null;
-  createdAt: number;
-  source: "drop" | "manual" | "clipboard" | null;
-  isDeleted: boolean;
-};
-
-type Attachment = {
-  id: string;
-  eventId: string;
-  kind: "file" | "image";
-  originalPath: string;
-  storedPath: string | null;
-  fileName: string | null;
-  mimeType: string | null;
-  sizeBytes: number | null;
-  sha256: string | null;
-  width: number | null;
-  height: number | null;
-  createdAt: number;
-};
-
-type Reminder = {
-  id: string;
-  eventId: string;
-  remindAt: number;
-  message: string;
-  status: "pending" | "triggered" | "dismissed" | "snoozed";
-  triggeredAt: number | null;
-  snoozeUntil: number | null;
-  createdAt: number;
-};
-
-type TimelineEventWithAttachments = {
-  event: TimelineEvent;
-  attachments: Attachment[];
-  reminders: Reminder[];
-};
-
-type CreateDropEventRequest = {
-  paths: string[];
-  note?: string;
-  remindAt?: number;
-  remindMessage?: string;
-};
-
-type CreateTextEventRequest = {
-  note: string;
-  textContent?: string;
-  remindAt?: number;
-  remindMessage?: string;
-};
-
-type ListEventsRequest = {
-  startDate?: number;
-  endDate?: number;
-  page?: number;
-  pageSize?: number;
-};
-
-// ============ Timeline API Functions ============
-
-async function saveDroppedFile(fileName: string, content: number[]): Promise<string> {
-  return invoke<string>("save_dropped_file", { request: { fileName, content } });
-}
-
-async function createDropEvent(request: CreateDropEventRequest): Promise<TimelineEventWithAttachments> {
-  return invoke<TimelineEventWithAttachments>("create_drop_event", { request });
-}
-
-async function createTextEvent(request: CreateTextEventRequest): Promise<TimelineEventWithAttachments> {
-  return invoke<TimelineEventWithAttachments>("create_text_event", { request });
-}
-
-async function listEvents(request: ListEventsRequest = {}): Promise<TimelineEventWithAttachments[]> {
-  return invoke<TimelineEventWithAttachments[]>("list_events", { request });
-}
-
-async function getEventDetail(eventId: string): Promise<TimelineEventWithAttachments> {
-  return invoke<TimelineEventWithAttachments>("get_event_detail", { eventId });
-}
-
-async function deleteEvent(eventId: string): Promise<void> {
-  return invoke<void>("delete_event", { eventId });
-}
-
-async function updateEventNote(eventId: string, note: string): Promise<void> {
-  return invoke<void>("update_event_note", { eventId, note });
-}
-
-// ============ Reminder API Functions ============
-
-async function createReminder(eventId: string, remindAt: number, message: string): Promise<Reminder> {
-  return invoke<Reminder>("create_reminder", { eventId, remindAt, message });
-}
-
-async function snoozeReminder(reminderId: string, snoozeMinutes: number): Promise<void> {
-  return invoke<void>("snooze_reminder", { reminderId, snoozeMinutes });
-}
-
-async function dismissReminder(reminderId: string): Promise<void> {
-  return invoke<void>("dismiss_reminder", { reminderId });
-}
-
-async function listPendingReminders(): Promise<Reminder[]> {
-  return invoke<Reminder[]>("list_pending_reminders");
-}
-
-// ============ Settings API Functions ============
-
-async function getSetting(key: string): Promise<string | null> {
-  return invoke<string | null>("get_setting", { key });
-}
-
-async function setSetting(key: string, value: string): Promise<void> {
-  return invoke<void>("set_setting", { key, value });
-}
-
-async function listSettings(): Promise<[string, string][]> {
-  return invoke<[string, string][]>("list_settings");
-}
-
-// ============ Export API Functions (Phase 5) ============
-
-type DailyExport = {
-  id: string;
-  dateKey: string;
-  outputFormat: string;
-  outputPath: string;
-  createdAt: number;
-};
-
-async function generateDailyExport(dateKey: string, format: string): Promise<string> {
-  return invoke<string>("generate_daily_export", { dateKey, format });
-}
-
-async function listExports(): Promise<DailyExport[]> {
-  return invoke<DailyExport[]>("list_exports");
-}
-
-async function openExportFolder(): Promise<string> {
-  return invoke<string>("open_export_folder");
-}
-
-// ============ Reminder Due Payload Type ============
-type ReminderDuePayload = {
-  reminder: Reminder;
-  event: TimelineEvent;
-  attachments: Attachment[];
-};
-
-// Format date to local YYYY-MM-DD string
-function formatLocalDate(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-}
-
-const BLINK_MIN_MS = 15000;
-const BLINK_MAX_MS = 30000;
-const USE_MOCK = true;
-const MOOD_CHECK_INTERVAL = 3000; // 每3秒检查一次心情
-const CONVERSATION_COOLDOWN = 30000; // 对话冷却时间30秒
-
-const DEFAULT_LLM_SETTINGS: LlmSettings = {
-  provider: "openai",
-  apiKey: "",
-  model: "gpt-3.5-turbo"
-};
-
-const LLM_MODELS = {
-  openai: ["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo"],
-  anthropic: ["claude-3-haiku-20240307", "claude-3-sonnet-20240229", "claude-3-opus-20240229"]
-};
-const WINDOW_COLLAPSED = { width: 320, height: 360 };
-const WINDOW_EXPANDED = { width: 720, height: 460 }; // Taller to keep chat panel fully within window
-
-function getRandomBlinkDelay() {
-  return Math.floor(
-    BLINK_MIN_MS + Math.random() * (BLINK_MAX_MS - BLINK_MIN_MS)
-  );
-}
+import { useLlmSettings, useReminder, usePapaSpace, useRecordPanel } from "./hooks";
+import {
+  ContextMenu,
+  ReminderToast,
+  RecordPanel,
+  SettingsPanel,
+  PapaSpacePanel,
+} from "./components";
 
 function mockResponseText(kind: "summarize" | "actions" | "remember") {
   if (kind === "summarize") {
@@ -479,18 +282,9 @@ export default function App() {
   const [conversationBubble, setConversationBubble] = useState<ConversationBubble | null>(null);
   const [lastConversationTime, setLastConversationTime] = useState(0);
   const [settingsVisible, setSettingsVisible] = useState(false);
-  const [llmSettings, setLlmSettings] = useState<LlmSettings>(() => {
-    // Load from localStorage
-    const saved = localStorage.getItem("llmSettings");
-    if (saved) {
-      try {
-        return { ...DEFAULT_LLM_SETTINGS, ...JSON.parse(saved) };
-      } catch {
-        return DEFAULT_LLM_SETTINGS;
-      }
-    }
-    return DEFAULT_LLM_SETTINGS;
-  });
+  // LLM Settings (extracted to hook)
+  const { llmSettings, updateSettings: updateLlmSettings, updateProvider: updateLlmProvider } = useLlmSettings();
+
   const [chatDialogVisible, setChatDialogVisible] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [chatImage, setChatImage] = useState<string | null>(null); // Base64 image data
@@ -502,31 +296,14 @@ export default function App() {
   const chatInputRef = useRef<HTMLInputElement>(null);
   const chatImageRef = useRef<HTMLImageElement>(null);
 
-  // ============ Record Panel State (Phase 2) ============
-  const [recordPanelVisible, setRecordPanelVisible] = useState(false);
-  const [pendingDropPaths, setPendingDropPaths] = useState<string[]>([]);
-  const [pendingDropText, setPendingDropText] = useState<string>("");
-  const [recordNote, setRecordNote] = useState("");
-  const [recordRemindEnabled, setRecordRemindEnabled] = useState(false);
-  const [recordRemindAt, setRecordRemindAt] = useState<Date | null>(null);
-  const [currentTimelineEvent, setCurrentTimelineEvent] = useState<TimelineEventWithAttachments | null>(null);
-  const [recordSaving, setRecordSaving] = useState(false);
-  const recordNoteRef = useRef<HTMLTextAreaElement>(null);
+  // ============ Record Panel State (Phase 2) - extracted to hook ============
+  const recordPanel = useRecordPanel();
 
-  // ============ Reminder Toast State (Phase 3) ============
-  const [activeReminder, setActiveReminder] = useState<ReminderDuePayload | null>(null);
-  const [reminderToastVisible, setReminderToastVisible] = useState(false);
+  // ============ Reminder Toast State (Phase 3) - extracted to hook ============
+  const reminder = useReminder();
 
-  // ============ Papa Space State (Phase 4) ============
-  const [papaSpaceVisible, setPapaSpaceVisible] = useState(false);
-  const [papaSpaceEvents, setPapaSpaceEvents] = useState<TimelineEventWithAttachments[]>([]);
-  const [papaSpaceSelectedDate, setPapaSpaceSelectedDate] = useState<string>(() => formatLocalDate(new Date()));
-  const [papaSpaceLoading, setPapaSpaceLoading] = useState(false);
-  const [papaSpaceEditingEvent, setPapaSpaceEditingEvent] = useState<TimelineEventWithAttachments | null>(null);
-  const [papaSpaceEditNote, setPapaSpaceEditNote] = useState("");
-  const [papaSpaceAISummary, setPapaSpaceAISummary] = useState<string>("");
-  const [papaSpaceAISummaryLoading, setPapaSpaceAISummaryLoading] = useState(false);
-  const [papaSpaceShowSummary, setPapaSpaceShowSummary] = useState(false);
+  // ============ Papa Space State (Phase 4) - extracted to hook ============
+  const papaSpace = usePapaSpace();
 
   const panelRef = useRef<HTMLDivElement>(null);
   const idleTimeoutRef = useRef<number | null>(null);
@@ -882,18 +659,18 @@ export default function App() {
           const dropStartTime = Date.now();
 
           // 保存待记录的路径，显示记录面板
-          setPendingDropPaths(paths);
-          setPendingDropText(""); // Clear any pending text
-          setRecordNote("");
-          setRecordRemindEnabled(false);
-          setRecordRemindAt(null);
+          recordPanel.setPendingPaths(paths);
+          recordPanel.setPendingText(""); // Clear any pending text
+          recordPanel.setNote("");
+          recordPanel.setRemindEnabled(false);
+          recordPanel.setRemindAt(null);
 
           // Close other panels
           setPanelVisible(false);
           setChatDialogVisible(false);
           setSettingsVisible(false);
-          setPapaSpaceVisible(false);
-          setReminderToastVisible(false);
+          papaSpace.setVisible(false);
+          reminder.hide();
           setChatInput("");
           setChatImage(null);
           setChatAction(null);
@@ -905,10 +682,10 @@ export default function App() {
           const remaining = Math.max(1000 - elapsed, 200);
           eatChompTimeoutRef.current = window.setTimeout(() => {
             setPetState("idle_breathe");
-            setRecordPanelVisible(true);
+            recordPanel.setVisible(true);
             // Focus note input
             setTimeout(() => {
-              recordNoteRef.current?.focus();
+              recordPanel.noteRef.current?.focus();
             }, 100);
             eatChompTimeoutRef.current = null;
           }, Math.max(remaining, 1000));
@@ -1157,12 +934,11 @@ export default function App() {
       setPanelVisible(false);
       setChatDialogVisible(false);
       setSettingsVisible(false);
-      setRecordPanelVisible(false);
-      setPapaSpaceVisible(false);
+      recordPanel.setVisible(false);
+      papaSpace.setVisible(false);
 
       // Show reminder panel
-      setActiveReminder(payload);
-      setReminderToastVisible(true);
+      reminder.show(payload);
 
       // Trigger excited animation
       if (!isMuted) {
@@ -1249,12 +1025,6 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
     return () => clearTimeout(timer);
   }, [userMood, isMuted, panelVisible, lastConversationTime, behaviorAnalysis, llmSettings]);
 
-  // Save LLM settings to localStorage
-  const saveLlmSettings = (settings: LlmSettings) => {
-    setLlmSettings(settings);
-    localStorage.setItem("llmSettings", JSON.stringify(settings));
-  };
-
   useEffect(() => {
     if (isMuted) return;
 
@@ -1319,7 +1089,7 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
   useEffect(() => {
     // Determine target window size based on state
     let next;
-    if (panelVisible || settingsVisible || chatDialogVisible || recordPanelVisible || papaSpaceVisible || reminderToastVisible) {
+    if (panelVisible || settingsVisible || chatDialogVisible || recordPanel.visible || papaSpace.visible || reminder.toastVisible) {
       next = WINDOW_EXPANDED; // Full expansion when any panel is visible
     } else {
       next = WINDOW_COLLAPSED; // Collapsed when idle
@@ -1349,7 +1119,7 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
       ...prev,
       lastResize: `${next.width}x${next.height}`
     }));
-  }, [panelVisible, settingsVisible, chatDialogVisible, recordPanelVisible, papaSpaceVisible, reminderToastVisible, currentWindowSize]);
+  }, [panelVisible, settingsVisible, chatDialogVisible, recordPanel.visible, papaSpace.visible, reminder.toastVisible, currentWindowSize]);
 
 
   // Update CSS variable on window resize
@@ -1757,9 +1527,9 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
       // Close other panels first
       setPanelVisible(false);
       setChatDialogVisible(false);
-      setRecordPanelVisible(false);
-      setPapaSpaceVisible(false);
-      setReminderToastVisible(false);
+      recordPanel.setVisible(false);
+      papaSpace.setVisible(false);
+      reminder.hide();
 
       setSettingsVisible(true);
       setPanelMode(null);
@@ -1860,9 +1630,9 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
       // Close other panels first
       setPanelVisible(false);
       setChatDialogVisible(false);
-      setRecordPanelVisible(false);
-      setPapaSpaceVisible(false);
-      setReminderToastVisible(false);
+      recordPanel.setVisible(false);
+      papaSpace.setVisible(false);
+      reminder.hide();
 
       setSettingsVisible(true);
       return;
@@ -1931,186 +1701,66 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
 
   // Handle reminder dismiss (complete)
   const handleReminderDismiss = async () => {
-    if (!activeReminder) return;
-
-    try {
-      await dismissReminder(activeReminder.reminder.id);
-      setReminderToastVisible(false);
-      setActiveReminder(null);
+    const success = await reminder.dismiss();
+    if (success) {
       setPetState("success_happy");
       gsapStateRef.current?.setState("happy");
       setTimeout(() => {
         setPetState("idle_breathe");
       }, 1000);
-    } catch (error) {
-      console.error("Failed to dismiss reminder:", error);
     }
   };
 
   // Handle reminder snooze
   const handleReminderSnooze = async (minutes: number) => {
-    if (!activeReminder) return;
-
-    try {
-      await snoozeReminder(activeReminder.reminder.id, minutes);
-      setReminderToastVisible(false);
-      setActiveReminder(null);
+    const success = await reminder.snooze(minutes);
+    if (success) {
       setPetState("comfy");
       gsapStateRef.current?.setState("comfy");
       setTimeout(() => {
         setPetState("idle_breathe");
       }, 800);
-    } catch (error) {
-      console.error("Failed to snooze reminder:", error);
     }
   };
 
   // Handle reminder open (view details)
   const handleReminderOpen = () => {
     // Open Papa Space with event details
-    setReminderToastVisible(false);
-    if (activeReminder) {
+    reminder.hide();
+    if (reminder.activeReminder) {
       void openPapaSpace();
       // Select the date of the reminder event
-      const eventDate = formatLocalDate(new Date(activeReminder.event.createdAt));
-      setPapaSpaceSelectedDate(eventDate);
+      const eventDate = formatLocalDate(new Date(reminder.activeReminder.event.createdAt));
+      papaSpace.setSelectedDate(eventDate);
     }
     setPetState("idle_breathe");
   };
 
   // ============ Papa Space Functions (Phase 4) ============
 
-  // Open Papa Space
+  // Open Papa Space (uses hook but handles panel coordination)
   const openPapaSpace = async () => {
     console.log("Opening Papa Space...");
     // Close other panels
     setPanelVisible(false);
     setChatDialogVisible(false);
     setSettingsVisible(false);
-    setRecordPanelVisible(false);
-    setReminderToastVisible(false);
+    recordPanel.setVisible(false);
+    reminder.hide();
 
-    setPapaSpaceVisible(true);
+    papaSpace.open();
     try {
-      await loadPapaSpaceEvents(papaSpaceSelectedDate);
+      await papaSpace.loadEvents(papaSpace.selectedDate);
     } catch (error) {
       console.error("Failed to load Papa Space events:", error);
     }
-  };
-
-  // Load events for selected date
-  const loadPapaSpaceEvents = async (dateKey: string) => {
-    console.log("Loading Papa Space events for:", dateKey);
-    setPapaSpaceLoading(true);
-    try {
-      // Calculate start and end of day in local timezone
-      const startOfDay = new Date(dateKey + "T00:00:00").getTime();
-      const endOfDay = new Date(dateKey + "T23:59:59.999").getTime();
-      console.log("Date range:", startOfDay, "to", endOfDay);
-
-      const events = await listEvents({
-        startDate: startOfDay,
-        endDate: endOfDay,
-        pageSize: 100,
-      });
-
-      console.log("Loaded events:", events.length);
-      setPapaSpaceEvents(events);
-    } catch (error) {
-      console.error("Failed to load events:", error);
-      setPapaSpaceEvents([]);
-    } finally {
-      setPapaSpaceLoading(false);
-    }
-  };
-
-  // Handle date selection
-  const handlePapaSpaceDateChange = async (dateKey: string) => {
-    setPapaSpaceSelectedDate(dateKey);
-    setPapaSpaceShowSummary(false);
-    setPapaSpaceAISummary("");
-    await loadPapaSpaceEvents(dateKey);
-  };
-
-  // Get recent dates (last 14 days) in local timezone
-  const getRecentDates = (): string[] => {
-    const dates: string[] = [];
-    const today = new Date();
-    for (let i = 0; i < 14; i++) {
-      const date = new Date(today);
-      date.setDate(today.getDate() - i);
-      dates.push(formatLocalDate(date));
-    }
-    return dates;
-  };
-
-  // Format date for display
-  const formatDateDisplay = (dateKey: string): string => {
-    const date = new Date(dateKey + "T00:00:00");
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(today.getDate() - 1);
-
-    if (dateKey === formatLocalDate(today)) {
-      return "Today";
-    }
-    if (dateKey === formatLocalDate(yesterday)) {
-      return "Yesterday";
-    }
-    return `${date.getMonth() + 1}/${date.getDate()}`;
-  };
-
-  // Format time for display
-  const formatTimeDisplay = (timestamp: number): string => {
-    const date = new Date(timestamp);
-    return `${date.getHours().toString().padStart(2, "0")}:${date.getMinutes().toString().padStart(2, "0")}`;
-  };
-
-  // Start editing event
-  const startEditEvent = (event: TimelineEventWithAttachments) => {
-    setPapaSpaceEditingEvent(event);
-    setPapaSpaceEditNote(event.event.note || "");
-  };
-
-  // Save event edit
-  const saveEventEdit = async () => {
-    if (!papaSpaceEditingEvent) return;
-
-    try {
-      await updateEventNote(papaSpaceEditingEvent.event.id, papaSpaceEditNote);
-      // Reload events
-      await loadPapaSpaceEvents(papaSpaceSelectedDate);
-      setPapaSpaceEditingEvent(null);
-      setPapaSpaceEditNote("");
-    } catch (error) {
-      console.error("Failed to save event:", error);
-    }
-  };
-
-  // Delete event
-  const handleDeleteEvent = async (eventId: string) => {
-    try {
-      await deleteEvent(eventId);
-      await loadPapaSpaceEvents(papaSpaceSelectedDate);
-    } catch (error) {
-      console.error("Failed to delete event:", error);
-    }
-  };
-
-  // Close Papa Space
-  const closePapaSpace = () => {
-    setPapaSpaceVisible(false);
-    setPapaSpaceEditingEvent(null);
-    setPapaSpaceEditNote("");
-    setPapaSpaceShowSummary(false);
-    setPapaSpaceAISummary("");
   };
 
   // Export current day
   const handleExportDay = async (format: "md" | "html") => {
     try {
       setPetState("thinking");
-      const outputPath = await generateDailyExport(papaSpaceSelectedDate, format);
+      const outputPath = await generateDailyExport(papaSpace.selectedDate, format);
       console.log("Export saved to:", outputPath);
       setPetState("success_happy");
       setTimeout(() => setPetState("idle_breathe"), 1000);
@@ -2135,25 +1785,25 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
   const handleGenerateAISummary = async () => {
     if (!llmSettings.apiKey) {
       // Close other panels and open settings
-      setPapaSpaceVisible(false);
+      papaSpace.setVisible(false);
       setSettingsVisible(true);
       return;
     }
 
-    if (papaSpaceEvents.length === 0) {
-      setPapaSpaceAISummary("No records today. Start capturing some thoughts!");
-      setPapaSpaceShowSummary(true);
+    if (papaSpace.events.length === 0) {
+      papaSpace.setAISummary("No records today. Start capturing some thoughts!");
+      papaSpace.setShowSummary(true);
       return;
     }
 
-    setPapaSpaceAISummaryLoading(true);
-    setPapaSpaceShowSummary(true);
-    setPapaSpaceAISummary("");
+    papaSpace.setAISummaryLoading(true);
+    papaSpace.setShowSummary(true);
+    papaSpace.setAISummary("");
     setPetState("thinking");
 
     try {
       // Build context from today's events
-      const eventsContext = papaSpaceEvents.map((item, index) => {
+      const eventsContext = papaSpace.events.map((item, index) => {
         const time = new Date(item.event.createdAt).toLocaleTimeString("zh-CN", {
           hour: "2-digit",
           minute: "2-digit"
@@ -2189,16 +1839,16 @@ Keep it warm and concise. If few records, just give a simple reflection.`;
         }
       });
 
-      setPapaSpaceAISummary(result);
+      papaSpace.setAISummary(result);
       setPetState("success_happy");
       setTimeout(() => setPetState("idle_breathe"), 1500);
     } catch (error) {
       console.error("Failed to generate AI summary:", error);
-      setPapaSpaceAISummary("Failed to generate summary. Please try again.");
+      papaSpace.setAISummary("Failed to generate summary. Please try again.");
       setPetState("error_confused");
       setTimeout(() => setPetState("idle_breathe"), 1500);
     } finally {
-      setPapaSpaceAISummaryLoading(false);
+      papaSpace.setAISummaryLoading(false);
     }
   };
 
@@ -2206,85 +1856,34 @@ Keep it warm and concise. If few records, just give a simple reflection.`;
 
   // Save record to timeline
   const handleSaveRecord = async () => {
-    if (pendingDropPaths.length === 0 && !pendingDropText) return;
+    if (recordPanel.pendingPaths.length === 0 && !recordPanel.pendingText) return;
 
-    setRecordSaving(true);
     setPetState("thinking");
 
-    try {
-      // Calculate remind_at timestamp if enabled
-      let remindAt: number | undefined;
-      if (recordRemindEnabled && recordRemindAt) {
-        remindAt = recordRemindAt.getTime();
-      }
+    const result = await recordPanel.save();
 
-      let result: TimelineEventWithAttachments;
-
-      if (pendingDropText) {
-        // Save text event
-        result = await createTextEvent({
-          textContent: pendingDropText,
-          note: recordNote.trim(),
-          remindAt,
-          remindMessage: recordNote.trim() || undefined,
-        });
-      } else {
-        // Save file drop event
-        result = await createDropEvent({
-          paths: pendingDropPaths,
-          note: recordNote.trim() || undefined,
-          remindAt,
-          remindMessage: recordNote.trim() || undefined,
-        });
-      }
-
-      setCurrentTimelineEvent(result);
+    if (result) {
       setPetState("success_happy");
-
-      // Close panel after success
       setTimeout(() => {
-        setRecordPanelVisible(false);
-        setPendingDropPaths([]);
-        setPendingDropText("");
-        setRecordNote("");
-        setRecordRemindEnabled(false);
-        setRecordRemindAt(null);
-        setCurrentTimelineEvent(null);
+        recordPanel.close();
         setPetState("idle_breathe");
       }, 800);
-    } catch (error) {
-      console.error("Failed to save record:", error);
+    } else {
       setPetState("error_confused");
       setTimeout(() => setPetState("idle_breathe"), 1200);
-    } finally {
-      setRecordSaving(false);
     }
   };
 
   // Cancel record and close panel
   const handleCancelRecord = () => {
-    setRecordPanelVisible(false);
-    setPendingDropPaths([]);
-    setPendingDropText("");
-    setRecordNote("");
-    setRecordRemindEnabled(false);
-    setRecordRemindAt(null);
+    recordPanel.close();
     setPetState("idle_breathe");
   };
 
-  // Quick remind options
-  const handleQuickRemind = (minutes: number) => {
-    setRecordRemindEnabled(true);
-    const remindTime = new Date(Date.now() + minutes * 60 * 1000);
-    setRecordRemindAt(remindTime);
-  };
+  // Quick remind options (use hook method)
+  const handleQuickRemind = recordPanel.setQuickRemind;
 
   // Format file name for display
-  const getFileDisplayName = (path: string): string => {
-    const parts = path.split(/[\\/]/);
-    return parts[parts.length - 1] || path;
-  };
-
   // Format remind time for display
   const formatRemindTime = (date: Date | null): string => {
     if (!date) return "";
@@ -2313,11 +1912,7 @@ Keep it warm and concise. If few records, just give a simple reflection.`;
     setChatResult("");
     setChatResultExpanded(false);
     // Close record panel
-    setRecordPanelVisible(false);
-    setPendingDropPaths([]);
-    setRecordNote("");
-    setRecordRemindEnabled(false);
-    setRecordRemindAt(null);
+    recordPanel.close();
 
     // Clear any pending timeouts
     if (successHappyTimeoutRef.current) {
@@ -2373,13 +1968,13 @@ Keep it warm and concise. If few records, just give a simple reflection.`;
               resetToInitialOnClick();
             }
             // If in initial state (no other panels open), show chat dialog
-            else if (!panelVisible && !settingsVisible && !chatDialogVisible && !recordPanelVisible && !papaSpaceVisible && !reminderToastVisible && petState === "idle_breathe") {
+            else if (!panelVisible && !settingsVisible && !chatDialogVisible && !recordPanel.visible && !papaSpace.visible && !reminder.toastVisible && petState === "idle_breathe") {
               // Close all other panels first
               setPanelVisible(false);
               setSettingsVisible(false);
-              setRecordPanelVisible(false);
-              setPapaSpaceVisible(false);
-              setReminderToastVisible(false);
+              recordPanel.setVisible(false);
+              papaSpace.setVisible(false);
+              reminder.hide();
               setPanelMode(null);
               setPanelText("");
               setDropRecord(null);
@@ -2472,8 +2067,8 @@ Keep it warm and concise. If few records, just give a simple reflection.`;
           setPanelVisible(false);
           setChatDialogVisible(false);
           setSettingsVisible(false);
-          setPapaSpaceVisible(false);
-          setReminderToastVisible(false);
+          papaSpace.setVisible(false);
+          reminder.hide();
           setChatInput("");
           setChatImage(null);
           setChatAction(null);
@@ -2507,19 +2102,19 @@ Keep it warm and concise. If few records, just give a simple reflection.`;
           Promise.all(filePromises)
             .then((paths) => {
               console.log("Files saved to:", paths);
-              setPendingDropPaths(paths);
-              setPendingDropText("");
-              setRecordNote("");
-              setRecordRemindEnabled(false);
-              setRecordRemindAt(null);
+              recordPanel.setPendingPaths(paths);
+              recordPanel.setPendingText("");
+              recordPanel.setNote("");
+              recordPanel.setRemindEnabled(false);
+              recordPanel.setRemindAt(null);
 
               // Show record panel after eat animation
               eatChompTimeoutRef.current = window.setTimeout(() => {
                 setPetState("idle_breathe");
-                setRecordPanelVisible(true);
+                recordPanel.setVisible(true);
                 eatChompTimeoutRef.current = null;
                 setTimeout(() => {
-                  recordNoteRef.current?.focus();
+                  recordPanel.noteRef.current?.focus();
                 }, 100);
               }, 1000);
             })
@@ -2541,23 +2136,23 @@ Keep it warm and concise. If few records, just give a simple reflection.`;
           setPanelVisible(false);
           setChatDialogVisible(false);
           setSettingsVisible(false);
-          setPapaSpaceVisible(false);
-          setReminderToastVisible(false);
+          papaSpace.setVisible(false);
+          reminder.hide();
 
           // Set pending text for record panel
-          setPendingDropText(text.trim());
-          setPendingDropPaths([]);
-          setRecordNote("");
-          setRecordRemindEnabled(false);
-          setRecordRemindAt(null);
+          recordPanel.setPendingText(text.trim());
+          recordPanel.setPendingPaths([]);
+          recordPanel.setNote("");
+          recordPanel.setRemindEnabled(false);
+          recordPanel.setRemindAt(null);
 
           // Show record panel after eat animation
           eatChompTimeoutRef.current = window.setTimeout(() => {
             setPetState("idle_breathe");
-            setRecordPanelVisible(true);
+            recordPanel.setVisible(true);
             eatChompTimeoutRef.current = null;
             setTimeout(() => {
-              recordNoteRef.current?.focus();
+              recordPanel.noteRef.current?.focus();
             }, 100);
           }, 1000);
           return;
@@ -2572,8 +2167,8 @@ Keep it warm and concise. If few records, just give a simple reflection.`;
       }}
     >
       <div
-        className={`pet-stage ${panelVisible || settingsVisible || chatDialogVisible || recordPanelVisible || papaSpaceVisible || reminderToastVisible ? "panel-open" : ""} ${
-          (panelVisible || settingsVisible || chatDialogVisible || recordPanelVisible || papaSpaceVisible || reminderToastVisible) && !isExpanded ? "panel-fallback" : ""
+        className={`pet-stage ${panelVisible || settingsVisible || chatDialogVisible || recordPanel.visible || papaSpace.visible || reminder.toastVisible ? "panel-open" : ""} ${
+          (panelVisible || settingsVisible || chatDialogVisible || recordPanel.visible || papaSpace.visible || reminder.toastVisible) && !isExpanded ? "panel-fallback" : ""
         }`}
       >
         <div className="pet-drag-hint">Drop files here</div>
@@ -2798,436 +2393,66 @@ Keep it warm and concise. If few records, just give a simple reflection.`;
             </div>
           </div>
         )}
-        {settingsVisible && (
-          <div className={`bubble-panel settings-panel`} data-no-drag>
-            <div className="bubble-header">
-              <span>Settings</span>
-              <button
-                className="close-button"
-                onClick={() => setSettingsVisible(false)}
-                data-no-drag
-              >
-                ×
-              </button>
-            </div>
-            <div className="settings-content">
-              <div className="settings-section">
-                <label className="settings-label">LLM Provider</label>
-                <select
-                  value={llmSettings.provider}
-                  onChange={(e) =>
-                    saveLlmSettings({
-                      ...llmSettings,
-                      provider: e.target.value as "openai" | "anthropic",
-                      model: LLM_MODELS[e.target.value as "openai" | "anthropic"][0]
-                    })
-                  }
-                  className="settings-input"
-                >
-                  <option value="openai">OpenAI</option>
-                  <option value="anthropic">Anthropic</option>
-                </select>
-              </div>
-              
-              <div className="settings-section">
-                <label className="settings-label">Model</label>
-                <select
-                  value={llmSettings.model}
-                  onChange={(e) =>
-                    saveLlmSettings({
-                      ...llmSettings,
-                      model: e.target.value
-                    })
-                  }
-                  className="settings-input"
-                >
-                  {LLM_MODELS[llmSettings.provider].map((model) => (
-                    <option key={model} value={model}>
-                      {model}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              
-              <div className="settings-section">
-                <label className="settings-label">API Key</label>
-                <input
-                  type="password"
-                  value={llmSettings.apiKey}
-                  onChange={(e) =>
-                    saveLlmSettings({
-                      ...llmSettings,
-                      apiKey: e.target.value
-                    })
-                  }
-                  placeholder="Enter your API key"
-                  className="settings-input"
-                />
-                <div className="settings-hint">
-                  {llmSettings.apiKey
-                    ? "✓ API key configured"
-                    : "⚠️ API key required for LLM conversations"}
-                </div>
-              </div>
-              
-              <div className="settings-section">
-                <button
-                  className="settings-save-button"
-                  onClick={() => setSettingsVisible(false)}
-                >
-                  Save & Close
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-        {recordPanelVisible && (
-          <div className="bubble-panel record-panel" data-no-drag>
-            <div className="bubble-header">
-              <span>📝 Record</span>
-              <button
-                className="close-button"
-                onClick={handleCancelRecord}
-                data-no-drag
-              >
-                ×
-              </button>
-            </div>
-            <div className="record-content">
-              {/* File or Text preview */}
-              {pendingDropText ? (
-                <div className="record-text-preview">
-                  <span className="record-text-icon">📝</span>
-                  <div className="record-text-content">
-                    {pendingDropText.length > 200
-                      ? pendingDropText.slice(0, 200) + "..."
-                      : pendingDropText}
-                  </div>
-                </div>
-              ) : (
-                <div className="record-files">
-                  {pendingDropPaths.map((path, index) => (
-                    <div key={index} className="record-file-item">
-                      <span className="record-file-icon">
-                        {path.match(/\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i) ? "🖼️" : "📄"}
-                      </span>
-                      <span className="record-file-name">{getFileDisplayName(path)}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Note input */}
-              <div className="record-note-section">
-                <textarea
-                  ref={recordNoteRef}
-                  value={recordNote}
-                  onChange={(e) => setRecordNote(e.target.value)}
-                  placeholder="Add a note..."
-                  className="record-note-input"
-                  rows={2}
-                  data-no-drag
-                />
-              </div>
-
-              {/* Remind toggle */}
-              <div className="record-remind-section">
-                <label className="record-remind-toggle">
-                  <input
-                    type="checkbox"
-                    checked={recordRemindEnabled}
-                    onChange={(e) => {
-                      setRecordRemindEnabled(e.target.checked);
-                      if (!e.target.checked) {
-                        setRecordRemindAt(null);
-                      }
-                    }}
-                    data-no-drag
-                  />
-                  <span>⏰ Remind me</span>
-                </label>
-
-                {recordRemindEnabled && (
-                  <div className="record-remind-options">
-                    <div className="record-remind-quick">
-                      <button onClick={() => handleQuickRemind(10)} data-no-drag>10 min</button>
-                      <button onClick={() => handleQuickRemind(60)} data-no-drag>1 hour</button>
-                      <button onClick={() => handleQuickRemind(60 * 24)} data-no-drag>Tomorrow</button>
-                      <button onClick={() => handleQuickRemind(60 * 24 * 3)} data-no-drag>3 days</button>
-                    </div>
-                    {recordRemindAt && (
-                      <div className="record-remind-time">
-                        {formatRemindTime(recordRemindAt)}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Action buttons */}
-              <div className="record-actions">
-                <button
-                  className="record-cancel-button"
-                  onClick={handleCancelRecord}
-                  disabled={recordSaving}
-                  data-no-drag
-                >
-                  Cancel
-                </button>
-                <button
-                  className="record-save-button"
-                  onClick={handleSaveRecord}
-                  disabled={recordSaving}
-                  data-no-drag
-                >
-                  {recordSaving ? "Saving..." : "Save"}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        <SettingsPanel
+          visible={settingsVisible}
+          llmSettings={llmSettings}
+          onClose={() => setSettingsVisible(false)}
+          onProviderChange={updateLlmProvider}
+          onSettingsChange={updateLlmSettings}
+        />
+        <RecordPanel
+          visible={recordPanel.visible}
+          pendingPaths={recordPanel.pendingPaths}
+          pendingText={recordPanel.pendingText}
+          note={recordPanel.note}
+          remindEnabled={recordPanel.remindEnabled}
+          remindAt={recordPanel.remindAt}
+          saving={recordPanel.saving}
+          noteRef={recordPanel.noteRef}
+          onNoteChange={recordPanel.setNote}
+          onRemindEnabledChange={recordPanel.setRemindEnabled}
+          onRemindAtChange={recordPanel.setRemindAt}
+          onQuickRemind={handleQuickRemind}
+          onSave={handleSaveRecord}
+          onCancel={handleCancelRecord}
+          formatRemindTime={formatRemindTime}
+        />
         {/* Reminder Panel (Phase 3) */}
-        {reminderToastVisible && activeReminder && (
-          <div className="bubble-panel reminder-panel" data-no-drag>
-            <div className="bubble-header">
-              <span>⏰ Reminder</span>
-              <button
-                className="close-button"
-                onClick={() => {
-                  setReminderToastVisible(false);
-                  setPetState("idle_breathe");
-                }}
-                data-no-drag
-              >
-                ×
-              </button>
-            </div>
-            <div className="reminder-panel-content">
-              <p className="reminder-panel-message">{activeReminder.reminder.message}</p>
-              {activeReminder.attachments.length > 0 && (
-                <div className="reminder-panel-attachment">
-                  <span className="reminder-panel-attachment-icon">
-                    {activeReminder.event.type === "image" ? "🖼️" : "📄"}
-                  </span>
-                  <span className="reminder-panel-attachment-name">
-                    {activeReminder.attachments[0].fileName || "Attachment"}
-                  </span>
-                </div>
-              )}
-            </div>
-            <div className="reminder-panel-actions">
-              <button
-                className="reminder-panel-done"
-                onClick={handleReminderDismiss}
-                data-no-drag
-              >
-                ✅ Done
-              </button>
-              <div className="reminder-panel-snooze-group">
-                <button
-                  className="reminder-panel-snooze"
-                  onClick={() => handleReminderSnooze(10)}
-                  data-no-drag
-                >
-                  10 min
-                </button>
-                <button
-                  className="reminder-panel-snooze"
-                  onClick={() => handleReminderSnooze(60)}
-                  data-no-drag
-                >
-                  1 hour
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        <ReminderToast
+          visible={reminder.toastVisible}
+          reminder={reminder.activeReminder}
+          onClose={() => {
+            reminder.hide();
+            setPetState("idle_breathe");
+          }}
+          onDismiss={handleReminderDismiss}
+          onSnooze={handleReminderSnooze}
+        />
         {/* Papa Space (Phase 4) */}
-        {papaSpaceVisible && (
-          <div className="bubble-panel papa-space" data-no-drag>
-            <div className="bubble-header">
-              <span>📋 Papa Space</span>
-              <button
-                className="close-button"
-                onClick={closePapaSpace}
-                data-no-drag
-              >
-                ×
-              </button>
-            </div>
-            <div className="papa-space-content">
-              {/* Action buttons */}
-              <div className="papa-space-export-bar">
-                <button
-                  className="papa-space-ai-btn"
-                  onClick={() => void handleGenerateAISummary()}
-                  disabled={papaSpaceAISummaryLoading}
-                  data-no-drag
-                >
-                  {papaSpaceAISummaryLoading ? "✨ Thinking..." : "✨ AI Summary"}
-                </button>
-                <div className="papa-space-export-group">
-                  <button
-                    className="papa-space-export-btn"
-                    onClick={() => handleExportDay("md")}
-                    data-no-drag
-                  >
-                    📄 MD
-                  </button>
-                  <button
-                    className="papa-space-export-btn"
-                    onClick={() => handleExportDay("html")}
-                    data-no-drag
-                  >
-                    🌐 HTML
-                  </button>
-                  <button
-                    className="papa-space-export-btn"
-                    onClick={() => void handleOpenExportsFolder()}
-                    data-no-drag
-                  >
-                    📁
-                  </button>
-                </div>
-              </div>
-
-              {/* Date selector */}
-              <div className="papa-space-dates">
-                {getRecentDates().map((dateKey) => (
-                  <button
-                    key={dateKey}
-                    className={`papa-space-date-btn ${dateKey === papaSpaceSelectedDate ? "active" : ""}`}
-                    onClick={() => handlePapaSpaceDateChange(dateKey)}
-                    data-no-drag
-                  >
-                    {formatDateDisplay(dateKey)}
-                  </button>
-                ))}
-              </div>
-
-              {/* AI Summary */}
-              {papaSpaceShowSummary && (
-                <div className="papa-space-ai-summary" data-no-drag>
-                  <div className="papa-space-ai-summary-header">
-                    <span>✨ Daily Summary</span>
-                    <button
-                      className="papa-space-ai-summary-close"
-                      onClick={() => setPapaSpaceShowSummary(false)}
-                      data-no-drag
-                    >
-                      ×
-                    </button>
-                  </div>
-                  <div className="papa-space-ai-summary-content">
-                    {papaSpaceAISummaryLoading ? (
-                      <div className="papa-space-ai-summary-loading">
-                        <span className="loading-dots">Thinking</span>
-                      </div>
-                    ) : (
-                      <div className="papa-space-ai-summary-text">
-                        {papaSpaceAISummary.split('\n').map((line, i) => (
-                          <p key={i}>{line}</p>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Timeline */}
-              <div className="papa-space-timeline">
-                {papaSpaceLoading ? (
-                  <div className="papa-space-loading">Loading...</div>
-                ) : papaSpaceEvents.length === 0 ? (
-                  <div className="papa-space-empty">No records for this day</div>
-                ) : (
-                  papaSpaceEvents.map((item) => (
-                    <div key={item.event.id} className="papa-space-event">
-                      <div className="papa-space-event-time">
-                        {formatTimeDisplay(item.event.createdAt)}
-                      </div>
-                      <div className="papa-space-event-content">
-                        <div className="papa-space-event-header">
-                          <span className="papa-space-event-icon">
-                            {item.event.type === "image" ? "🖼️" : item.event.type === "text" ? "📝" : "📄"}
-                          </span>
-                          <span className="papa-space-event-title">
-                            {item.event.title || item.event.note?.slice(0, 20) || "Untitled"}
-                          </span>
-                          <div className="papa-space-event-actions">
-                            <button
-                              className="papa-space-event-edit"
-                              onClick={() => startEditEvent(item)}
-                              data-no-drag
-                            >
-                              ✏️
-                            </button>
-                            <button
-                              className="papa-space-event-delete"
-                              onClick={() => handleDeleteEvent(item.event.id)}
-                              data-no-drag
-                            >
-                              🗑️
-                            </button>
-                          </div>
-                        </div>
-                        {item.event.note && (
-                          <p className="papa-space-event-note">{item.event.note}</p>
-                        )}
-                        {item.attachments.length > 0 && (
-                          <div className="papa-space-event-attachments">
-                            {item.attachments.map((att) => (
-                              <span key={att.id} className="papa-space-attachment">
-                                {att.kind === "image" ? "🖼️" : "📎"} {att.fileName}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                        {item.reminders.length > 0 && (
-                          <div className="papa-space-event-reminders">
-                            {item.reminders.map((rem) => (
-                              <span key={rem.id} className={`papa-space-reminder ${rem.status}`}>
-                                ⏰ {rem.status === "pending" ? "pending" : rem.status === "dismissed" ? "done" : rem.status}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-
-              {/* Edit modal */}
-              {papaSpaceEditingEvent && (
-                <div className="papa-space-edit-modal">
-                  <div className="papa-space-edit-header">Edit Note</div>
-                  <textarea
-                    value={papaSpaceEditNote}
-                    onChange={(e) => setPapaSpaceEditNote(e.target.value)}
-                    className="papa-space-edit-input"
-                    rows={3}
-                    data-no-drag
-                  />
-                  <div className="papa-space-edit-actions">
-                    <button
-                      onClick={() => {
-                        setPapaSpaceEditingEvent(null);
-                        setPapaSpaceEditNote("");
-                      }}
-                      data-no-drag
-                    >
-                      Cancel
-                    </button>
-                    <button onClick={saveEventEdit} data-no-drag>
-                      Save
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+        <PapaSpacePanel
+          visible={papaSpace.visible}
+          events={papaSpace.events}
+          selectedDate={papaSpace.selectedDate}
+          loading={papaSpace.loading}
+          aiSummary={papaSpace.aiSummary}
+          aiSummaryLoading={papaSpace.aiSummaryLoading}
+          showSummary={papaSpace.showSummary}
+          editingEvent={papaSpace.editingEvent}
+          editNote={papaSpace.editNote}
+          onClose={papaSpace.close}
+          onDateChange={papaSpace.changeDate}
+          onStartEdit={papaSpace.startEdit}
+          onRemoveEvent={papaSpace.removeEvent}
+          onSaveEventNote={papaSpace.saveEventNote}
+          onSetShowSummary={papaSpace.setShowSummary}
+          onSetEditNote={papaSpace.setEditNote}
+          onSetEditingEvent={papaSpace.setEditingEvent}
+          onGenerateAISummary={() => void handleGenerateAISummary()}
+          onExportDay={handleExportDay}
+          onOpenExportsFolder={() => void handleOpenExportsFolder()}
+          getRecentDates={papaSpace.getRecentDates}
+          formatDateDisplay={papaSpace.formatDateDisplay}
+        />
       </div>
       <div className="state-label">{activeState}</div>
       <div className="pet-controls">
@@ -3252,9 +2477,9 @@ Keep it warm and concise. If few records, just give a simple reflection.`;
             // Close other panels first
             setChatDialogVisible(false);
             setSettingsVisible(false);
-            setRecordPanelVisible(false);
-            setPapaSpaceVisible(false);
-            setReminderToastVisible(false);
+            recordPanel.setVisible(false);
+            papaSpace.setVisible(false);
+            reminder.hide();
 
             setDropRecord({
               id: 0,
@@ -3341,54 +2566,23 @@ Keep it warm and concise. If few records, just give a simple reflection.`;
         </div>
       )}
 
-      {contextMenu.visible && (
-        <div
-          className="context-menu"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-          data-no-drag
-          onPointerDown={(e) => e.stopPropagation()}
-        >
-          <button
-            onClick={() => {
-              setContextMenu({ ...contextMenu, visible: false });
-              void openPapaSpace();
-            }}
-          >
-            📋 Papa Space
-          </button>
-          <button
-            onClick={() => {
-              setContextMenu({ ...contextMenu, visible: false });
-              // Close other panels first
-              setPanelVisible(false);
-              setChatDialogVisible(false);
-              setRecordPanelVisible(false);
-              setPapaSpaceVisible(false);
-              setReminderToastVisible(false);
-              setSettingsVisible(true);
-            }}
-          >
-            ⚙️ Settings
-          </button>
-          <button onClick={() => setIsMuted((prev) => !prev)}>
-            {isMuted ? "🔔 Wake" : "😴 Sleep"}
-          </button>
-          <button
-            onClick={async () => {
-              setContextMenu({ ...contextMenu, visible: false });
-              await invoke("hide_for", { ms: 10000 });
-            }}
-          >
-            👻 Hide 10s
-          </button>
-          <button
-            onClick={() => void appWindow.close()}
-            className="context-menu-quit"
-          >
-            ❌ Quit
-          </button>
-        </div>
-      )}
+      <ContextMenu
+        x={contextMenu.x}
+        y={contextMenu.y}
+        visible={contextMenu.visible}
+        isMuted={isMuted}
+        onClose={() => setContextMenu({ ...contextMenu, visible: false })}
+        onOpenPapaSpace={() => void openPapaSpace()}
+        onOpenSettings={() => {
+          setPanelVisible(false);
+          setChatDialogVisible(false);
+          recordPanel.setVisible(false);
+          papaSpace.setVisible(false);
+          reminder.hide();
+          setSettingsVisible(true);
+        }}
+        onToggleMute={() => setIsMuted((prev) => !prev)}
+      />
 
       <div className="pet-assets" aria-hidden>
         <img src={PET_LAYER_SRC} alt="" />

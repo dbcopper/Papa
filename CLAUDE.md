@@ -34,17 +34,46 @@ Note: This project uses both Vite (frontend) and Tauri (desktop wrapper). The `t
 
 ### Frontend Architecture (React + TypeScript)
 
-**Main Component**: `src/App.tsx` (~2800 lines)
-- Single-file architecture with all state management, event handling, and UI rendering
-- Uses React hooks for state management (no external state library)
+**目录结构**：
+```
+src/
+├── components/          # UI 组件
+│   ├── index.ts         # 组件导出
+│   ├── ContextMenu.tsx  # 右键菜单
+│   ├── ReminderToast.tsx # 提醒通知
+│   ├── RecordPanel.tsx  # 记录面板
+│   ├── SettingsPanel.tsx # 设置面板
+│   └── PapaSpacePanel.tsx # Papa Space 面板
+├── hooks/               # 自定义 Hooks
+│   ├── index.ts
+│   ├── useLlmSettings.ts # LLM 设置状态
+│   ├── useReminder.ts   # 提醒状态
+│   ├── usePapaSpace.ts  # Papa Space 状态
+│   └── useRecordPanel.ts # 记录面板状态
+├── services/
+│   └── api.ts           # Tauri 命令封装
+├── types/
+│   └── index.ts         # TypeScript 类型定义
+├── constants/
+│   └── index.ts         # 常量和配置
+├── utils/
+│   └── helpers.ts       # 工具函数
+├── styles/
+│   └── app.css          # 样式文件
+└── App.tsx              # 主组件（~2300 行）
+```
+
+**主组件**: `src/App.tsx`
+- 模块化架构，状态和 UI 组件已拆分
+- 使用自定义 Hooks 管理复杂状态（useLlmSettings, useReminder, usePapaSpace, useRecordPanel）
 - Animation libraries: `animejs` for eye tracking, `gsap` with MorphSVGPlugin for complex mouth animations
 
 **Key State Systems**:
 1. **Pet State Machine**: Manages 15+ emotional states (`idle_breathe`, `eat_chomp`, `thinking`, `happy`, `tired`, `excited`, etc.)
 2. **Global Mouse Tracking**: Pupils follow cursor across all applications/windows via Rust backend events
 3. **Behavior Analysis**: Monitors typing speed, mouse activity, idle time to infer user mood
-4. **File Drop System**: Drag-and-drop workflow with animated responses
-5. **LLM Integration**: Optional OpenAI/Anthropic API calls for processing files (see USE_MOCK constant)
+4. **File/Text Drop System**: Drag-and-drop workflow with animated responses (supports both files and text)
+5. **LLM Integration**: Optional OpenAI/Anthropic API calls for processing files (see USE_MOCK constant in constants/index.ts)
 
 **Animation System**:
 - Eye tracking uses animejs with smooth easing
