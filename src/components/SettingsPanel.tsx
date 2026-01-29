@@ -4,7 +4,6 @@ import type { LlmSettings } from "../types";
 type SettingsPanelProps = {
   visible: boolean;
   llmSettings: LlmSettings;
-  onClose: () => void;
   onProviderChange: (provider: "openai" | "anthropic") => void;
   onSettingsChange: (settings: Partial<LlmSettings>) => void;
 };
@@ -12,7 +11,6 @@ type SettingsPanelProps = {
 export function SettingsPanel({
   visible,
   llmSettings,
-  onClose,
   onProviderChange,
   onSettingsChange,
 }: SettingsPanelProps) {
@@ -22,13 +20,6 @@ export function SettingsPanel({
     <div className="bubble-panel settings-panel" data-no-drag>
       <div className="bubble-header">
         <span>Settings</span>
-        <button
-          className="close-button"
-          onClick={onClose}
-          data-no-drag
-        >
-          ×
-        </button>
       </div>
       <div className="settings-content">
         <div className="settings-section">
@@ -74,14 +65,6 @@ export function SettingsPanel({
           </div>
         </div>
 
-        <div className="settings-section">
-          <button
-            className="settings-save-button"
-            onClick={onClose}
-          >
-            Save & Close
-          </button>
-        </div>
       </div>
     </div>
   );

@@ -110,13 +110,25 @@ src/
    - Used for file summarization and analysis features
    - Async reqwest-based HTTP calls
 
-**Tauri Commands** (invoke from frontend):
+**Tauri Commands** (invoke from frontend, 封装在 `src/services/api.ts`):
 - `process_drop_paths_command`: Process dropped files, return record ID
+- `save_dropped_file`: Save file content from DOM drop events (for text/file drag support)
 - `save_mock_result`: Save summarization/action/memory results to DB
 - `set_window_size`: Resize window while maintaining position
 - `hide_for`: Temporarily hide window for specified milliseconds
 - `call_llm_api`: Make LLM API requests (OpenAI/Anthropic)
 - `read_file_content`: Read file content (max 1MB)
+- `create_drop_event`: Create timeline event from file drop
+- `create_text_event`: Create timeline event from text
+- `list_events`: List timeline events by date
+- `update_event_note`: Update event note
+- `delete_event`: Delete timeline event
+- `snooze_reminder`: Snooze a reminder
+- `dismiss_reminder`: Dismiss a reminder
+- `list_pending_reminders`: List pending reminders
+- `generate_daily_export`: Generate daily export (MD/HTML)
+- `open_export_folder`: Open exports folder in file manager
+- `get_setting` / `set_setting`: Settings management
 
 **Tauri Events** (listen in frontend):
 - `global-mouse-move`: Mouse position updates (60fps)
@@ -138,10 +150,47 @@ src/
 ## Code Organization Patterns
 
 ### Frontend Patterns
-- **Pupil tracking**: `getPupilState`, `setPupilState`, `getPupilOffset` helper functions for eye animation
-- **Mock vs Real LLM**: Toggle with `USE_MOCK` constant (line 71 in App.tsx)
-- **Streaming text**: `StreamingText` component for character-by-character display (22ms/char)
-- **State transitions**: Pet state changes trigger animation sequences via useEffect hooks
+
+**类型定义** (`src/types/index.ts`):
+- `PetState`: 宠物状态类型
+- `TimelineEvent`, `TimelineEventWithAttachments`: 时间线事件
+- `Reminder`, `ReminderDuePayload`: 提醒相关类型
+- `LlmSettings`: LLM 配置类型
+- `WindowSize`: 窗口尺寸类型
+
+**常量** (`src/constants/index.ts`):
+- `USE_MOCK`: 切换 Mock/Real LLM
+- `WINDOW_COLLAPSED`, `WINDOW_EXPANDED`: 窗口尺寸配置
+- `LLM_MODELS`: 支持的 LLM 模型列表
+- `DEFAULT_LLM_SETTINGS`: 默认 LLM 设置
+- `MOOD_CHECK_INTERVAL`, `CONVERSATION_COOLDOWN`: 行为检测间隔
+
+**自定义 Hooks** (`src/hooks/`):
+- `useLlmSettings`: LLM 设置状态管理，带 localStorage 持久化
+- `useReminder`: 提醒 Toast 状态（show/hide/snooze/dismiss）
+- `usePapaSpace`: Papa Space 面板状态（事件列表、日期选择、编辑、AI 摘要）
+- `useRecordPanel`: 记录面板状态（pending files/text、note、remind）
+
+**UI 组件** (`src/components/`):
+- `ContextMenu`: 右键菜单（Papa Space、Settings、Sleep/Wake、Hide、Quit）
+- `RecordPanel`: 记录面板（文件/文本预览、备注、提醒设置）
+- `ReminderToast`: 提醒通知（Done、Snooze 操作）
+- `SettingsPanel`: 设置面板（LLM Provider、Model、API Key）
+- `PapaSpacePanel`: Papa Space 控制中心（日期选择、时间线、AI 摘要、导出）
+
+**工具函数** (`src/utils/helpers.ts`):
+- `formatLocalDate`, `formatTime`, `formatDateTime`: 日期格式化
+- `getFileDisplayName`, `isImageFile`, `getFileExtension`: 文件处理
+- `truncate`, `clamp`, `lerp`: 通用工具
+
+**API 封装** (`src/services/api.ts`):
+- 所有 Tauri invoke 调用的封装函数
+- 统一的错误处理和类型定义
+
+**动画相关** (保留在 `App.tsx`):
+- `getPupilState`, `setPupilState`, `getPupilOffset`: 眼睛动画辅助函数
+- `StreamingText` 组件: 逐字显示文本（22ms/char）
+- 状态转换触发动画序列（通过 useEffect hooks）
 
 ### Backend Patterns
 - **Database access**: Always use `state.lock` to ensure thread safety
@@ -154,11 +203,13 @@ src/
 
 2. **Mood inference**: The backend monitors typing patterns, mouse movement, and idle time to estimate user mood (focused/tired/excited/confused/relaxed). The pet adjusts its behavior accordingly.
 
-3. **File drop workflow**:
-   - Drag file over window → state: `waiting_for_drop` (big O-shaped mouth)
-   - Drop file → state: `eat_chomp` (chewing animation)
-   - Processing → state: `thinking` (animated expression)
-   - Complete → state: `success_happy` or `error_confused`
+3. **File/Text drop workflow**:
+   - Drag file/text over window → state: `waiting_for_drop` (big O-shaped mouth)
+   - Drop → state: `eat_chomp` (chewing animation)
+   - Show RecordPanel → 用户可添加备注和设置提醒
+   - Save → 保存到数据库，state: `success_happy`
+   - Cancel → 取消记录，state: `idle_breathe`
+   - 注意：使用 DOM 拖拽事件（非 Tauri 原生），支持文本和文件
 
 4. **Window resizing**: When showing the operation panel, the window expands to 720px width while keeping the pet in the same screen position (left-top anchor).
 
@@ -169,8 +220,9 @@ src/
 - The app uses **transparent windows**, which can behave differently across OS versions. On Windows, ensure GPU acceleration is enabled.
 - **Global input monitoring** may require accessibility permissions on macOS.
 - The database is stored in the platform-specific app data directory (check `tauri::path::BaseDirectory::AppData`).
-- Right-click the pet to access the quick menu (sleep/wake, hide temporarily, quit).
-- The frontend is a single large component. When making changes, search for the relevant state or animation function.
+- Right-click the pet to access the quick menu (Papa Space, Settings, Sleep/Wake, Hide 10s, Quit).
+- **拖拽支持**: 同时支持文件拖拽和文本拖拽，通过 DOM 事件处理（`dragDropEnabled: false` in tauri.conf.json）
+- **代码组织**: 前端已模块化，状态逻辑在 hooks 中，UI 在 components 中，业务逻辑在 App.tsx 中
 - GSAP's MorphSVGPlugin requires a license for commercial use (currently used for mouth animations).
 
 ## Testing & Debugging
@@ -182,10 +234,16 @@ src/
 
 ## Important Constants to Know
 
+所有常量定义在 `src/constants/index.ts`:
+
+- `USE_MOCK`: 是否使用 Mock LLM 响应（开发时设为 true）
 - `BLINK_MIN_MS / BLINK_MAX_MS`: Controls blink frequency (15-30 seconds)
 - `MOOD_CHECK_INTERVAL`: How often to analyze user behavior (3 seconds)
 - `CONVERSATION_COOLDOWN`: Minimum time between pet conversations (30 seconds)
-- `WINDOW_COLLAPSED / WINDOW_EXPANDED`: Window size configurations
+- `WINDOW_COLLAPSED`: { width: 320, height: 320 }
+- `WINDOW_EXPANDED`: { width: 720, height: 320 }
+- `LLM_MODELS`: 支持的模型列表 { openai: [...], anthropic: [...] }
+- `DEFAULT_LLM_SETTINGS`: 默认 LLM 配置
 
 ---
 
@@ -439,37 +497,49 @@ CREATE TABLE IF NOT EXISTS settings (
 
 ## 7. 开发迭代计划
 
-### Phase 1: 数据层重构（优先级最高）
+### Phase 1: 数据层重构 ✅ 已完成
 
-1. 创建新的 SQLite 表结构（timeline_events, attachments, reminders, daily_exports, settings）
-2. 迁移现有 drop_records 数据到新结构
-3. 实现基础 CRUD Tauri Commands
+1. ✅ 创建新的 SQLite 表结构（timeline_events, attachments, reminders, daily_exports, settings）
+2. ✅ 迁移现有 drop_records 数据到新结构
+3. ✅ 实现基础 CRUD Tauri Commands
 
-### Phase 2: Bubble Panel 记录流程
+### Phase 2: Bubble Panel 记录流程 ✅ 已完成
 
-1. 实现拖放后弹出 Bubble Panel
-2. 实现 note 输入 + 保存逻辑
-3. 实现提醒时间选择（MVP 用绝对时间选择器）
+1. ✅ 实现拖放后弹出 Bubble Panel（RecordPanel 组件）
+2. ✅ 实现 note 输入 + 保存逻辑
+3. ✅ 实现提醒时间选择（快捷按钮：10min / 1h / Tomorrow / 3 days）
+4. ✅ 支持文本拖拽（除了文件拖拽）
 
-### Phase 3: 提醒系统
+### Phase 3: 提醒系统 ✅ 已完成
 
-1. 实现 Rust 后台提醒扫描器（每 60s 检查到期 reminders）
-2. 实现 reminder-due 事件推送
-3. 实现前端 Reminder Toast 及交互
+1. ✅ 实现 Rust 后台提醒扫描器（每 60s 检查到期 reminders）
+2. ✅ 实现 reminder-due 事件推送
+3. ✅ 实现前端 Reminder Toast 及交互（ReminderToast 组件）
 
-### Phase 4: Papa Space 控制中心
+### Phase 4: Papa Space 控制中心 ✅ 已完成
 
-1. 实现独立窗口或面板
-2. 实现日期列表 + 时间线视图
-3. 实现事件详情编辑
+1. ✅ 实现面板（PapaSpacePanel 组件）
+2. ✅ 实现日期列表 + 时间线视图
+3. ✅ 实现事件详情编辑
+4. ✅ 实现 AI 摘要功能
 
-### Phase 5: 每日导出
+### Phase 5: 每日导出 ✅ 已完成
 
-1. 实现 Markdown 导出生成器
-2. 实现定时/手动触发导出
-3. 实现导出记录管理
+1. ✅ 实现 Markdown 导出生成器
+2. ✅ 实现 HTML 导出生成器
+3. ✅ 实现手动触发导出
+4. ✅ 实现打开导出文件夹功能
 
-### Phase 6: 早间问候（可选 LLM 增强）
+### Phase 6: 代码重构 ✅ 已完成
+
+1. ✅ 拆分类型定义到 `src/types/`
+2. ✅ 拆分常量到 `src/constants/`
+3. ✅ 拆分 API 调用到 `src/services/`
+4. ✅ 拆分工具函数到 `src/utils/`
+5. ✅ 拆分自定义 Hooks 到 `src/hooks/`
+6. ✅ 拆分 UI 组件到 `src/components/`
+
+### Phase 7: 早间问候（待开发）
 
 1. 实现情境状态检测（Morning/Focus/Evening/Idle）
 2. 实现早间问候 UI

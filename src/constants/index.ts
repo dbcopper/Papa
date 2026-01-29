@@ -18,7 +18,17 @@ export const CONVERSATION_COOLDOWN = 30000; // 30 second cooldown between conver
 // ============ Window Sizes ============
 
 export const WINDOW_COLLAPSED: WindowSize = { width: 320, height: 360 };
-export const WINDOW_EXPANDED: WindowSize = { width: 720, height: 460 };
+
+// Dynamic window sizes for different panels
+export const WINDOW_SIZES = {
+  collapsed: { width: 320, height: 360 },
+  settings: { width: 620, height: 400 },      // Settings panel (narrower)
+  chat: { width: 640, height: 420 },          // Chat dialog
+  filePanel: { width: 640, height: 420 },     // File drop panel
+  record: { width: 620, height: 420 },        // Record panel
+  papaSpace: { width: 680, height: 460 },     // Papa Space (wider)
+  reminder: { width: 620, height: 400 },      // Reminder toast
+} as const;
 
 // ============ LLM Settings ============
 

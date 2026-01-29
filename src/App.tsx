@@ -25,7 +25,7 @@ import {
   DEFAULT_LLM_SETTINGS,
   LLM_MODELS,
   WINDOW_COLLAPSED,
-  WINDOW_EXPANDED,
+  WINDOW_SIZES,
   getRandomBlinkDelay,
 } from "./constants";
 
@@ -262,13 +262,6 @@ export default function App() {
   const [panelText, setPanelText] = useState("");
   const [streamKey, setStreamKey] = useState(0);
   const [panelLockUntil, setPanelLockUntil] = useState(0);
-  const [isMuted, setIsMuted] = useState(false);
-  const [showDebugControls, setShowDebugControls] = useState(false);
-  const [debugInfo, setDebugInfo] = useState({
-    lastDomDrag: "none",
-    domDragCount: 0,
-    lastResize: "none"
-  });
   const [currentWindowSize, setCurrentWindowSize] = useState(
     WINDOW_COLLAPSED
   );
@@ -332,13 +325,9 @@ export default function App() {
   const petClickStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
 
   const appWindow = useMemo(() => getCurrentWindow(), []);
-  const activeState = useMemo(() => {
-    if (isMuted) return "idle_breathe";
-    return petState;
-  }, [isMuted, petState]);
-  const isExpanded =
-    currentWindowSize.width >= WINDOW_EXPANDED.width - 1 &&
-    currentWindowSize.height >= WINDOW_EXPANDED.height - 1;
+  const activeState = petState;
+  // Window is expanded if larger than collapsed size
+  const isExpanded = currentWindowSize.width > WINDOW_COLLAPSED.width;
   
   // Debug: log state changes (disabled for performance)
   // useEffect(() => {
@@ -362,7 +351,7 @@ export default function App() {
       petState === "eat_chomp" ||
       petState === "eat_action";
 
-    if (isMuted || !shouldFollowMouse) {
+    if (!shouldFollowMouse) {
       // 不在这里重置眼睛位置，让状态动画来控制
       // 状态动画中的 resetToNeutral 会处理眼睛位置
       return;
@@ -512,7 +501,7 @@ export default function App() {
       }
       
       // Check if mouse is in window and button is pressed (dragging)
-      if (isMouseButtonPressed && !isMuted && cachedWindowPos && cachedWindowSize) {
+      if (isMouseButtonPressed && cachedWindowPos && cachedWindowSize) {
         const windowX = x - cachedWindowPos.x;
         const windowY = y - cachedWindowPos.y;
         
@@ -542,7 +531,7 @@ export default function App() {
       isMouseButtonPressed = event.payload.pressed;
       console.log("Mouse button state changed:", wasPressed, "->", isMouseButtonPressed);
       
-      if (!isMouseButtonPressed && wasPressed && !isMuted) {
+      if (!isMouseButtonPressed && wasPressed) {
         // Button just released, but don't reset if we're about to drop
         // The drop event will handle the state change
         setTimeout(() => {
@@ -594,43 +583,39 @@ export default function App() {
 
       // 不在清理时重置眼睛位置，让状态动画来控制
     };
-  }, [isMuted, petState]);
+  }, [petState]);
 
 
   useEffect(() => {
     const appWindow = getCurrentWindow();
 
     const unlistenDropEvent = appWindow.onDragDropEvent((event) => {
-      console.log("Tauri dragdrop event:", event.payload.type, "isMuted:", isMuted, "paths:", event.payload.paths);
-      
+      console.log("Tauri dragdrop event:", event.payload.type, "paths:", event.payload.paths);
+
       // 处理拖拽进入事件
       if (event.payload.type === "hover" || event.payload.type === "enter") {
-        if (!isMuted) {
-          console.log("Tauri dragenter detected, setting waiting_for_drop");
-          setPetState((currentState) => {
-            if (currentState !== "waiting_for_drop" && currentState !== "eat_chomp") {
-              return "waiting_for_drop";
-            }
-            return currentState;
-          });
-        }
+        console.log("Tauri dragenter detected, setting waiting_for_drop");
+        setPetState((currentState) => {
+          if (currentState !== "waiting_for_drop" && currentState !== "eat_chomp") {
+            return "waiting_for_drop";
+          }
+          return currentState;
+        });
         return;
       }
-      
+
       // 处理拖拽离开事件
       if (event.payload.type === "leave" || event.payload.type === "cancelled") {
-        if (!isMuted) {
-          console.log("Tauri dragleave detected");
-          setPetState((currentState) => {
-            if (currentState === "waiting_for_drop") {
-              return "idle_breathe";
-            }
-            return currentState;
-          });
-        }
+        console.log("Tauri dragleave detected");
+        setPetState((currentState) => {
+          if (currentState === "waiting_for_drop") {
+            return "idle_breathe";
+          }
+          return currentState;
+        });
         return;
       }
-      
+
       if (event.payload.type === "drop") {
         const paths = event.payload.paths;
 
@@ -640,161 +625,130 @@ export default function App() {
           return;
         }
 
-        if (!isMuted) {
-          // 清除之前的 timeout（如果有）
-          if (eatChompTimeoutRef.current) {
-            window.clearTimeout(eatChompTimeoutRef.current);
-            eatChompTimeoutRef.current = null;
-          }
-          // 立即设置 eat_chomp 状态，确保动画能触发
-          console.log("Tauri drop detected with files, setting eat_chomp");
-          setPetState((currentState) => {
-            // 如果当前是 waiting_for_drop，转换为 eat_chomp
-            if (currentState === "waiting_for_drop" || currentState === "idle_breathe") {
-              return "eat_chomp";
-            }
-            return currentState;
-          });
-          // 记录 drop 开始时间
-          const dropStartTime = Date.now();
-
-          // 保存待记录的路径，显示记录面板
-          recordPanel.setPendingPaths(paths);
-          recordPanel.setPendingText(""); // Clear any pending text
-          recordPanel.setNote("");
-          recordPanel.setRemindEnabled(false);
-          recordPanel.setRemindAt(null);
-
-          // Close other panels
-          setPanelVisible(false);
-          setChatDialogVisible(false);
-          setSettingsVisible(false);
-          papaSpace.setVisible(false);
-          reminder.hide();
-          setChatInput("");
-          setChatImage(null);
-          setChatAction(null);
-          setChatResult("");
-          setChatResultExpanded(false);
-
-          // 确保 eat_chomp 状态持续至少 1000ms（动画时长），然后显示记录面板
-          const elapsed = Date.now() - dropStartTime;
-          const remaining = Math.max(1000 - elapsed, 200);
-          eatChompTimeoutRef.current = window.setTimeout(() => {
-            setPetState("idle_breathe");
-            recordPanel.setVisible(true);
-            // Focus note input
-            setTimeout(() => {
-              recordPanel.noteRef.current?.focus();
-            }, 100);
-            eatChompTimeoutRef.current = null;
-          }, Math.max(remaining, 1000));
+        // 清除之前的 timeout（如果有）
+        if (eatChompTimeoutRef.current) {
+          window.clearTimeout(eatChompTimeoutRef.current);
+          eatChompTimeoutRef.current = null;
         }
+        // 立即设置 eat_chomp 状态，确保动画能触发
+        console.log("Tauri drop detected with files, setting eat_chomp");
+        setPetState((currentState) => {
+          // 如果当前是 waiting_for_drop，转换为 eat_chomp
+          if (currentState === "waiting_for_drop" || currentState === "idle_breathe") {
+            return "eat_chomp";
+          }
+          return currentState;
+        });
+        // 记录 drop 开始时间
+        const dropStartTime = Date.now();
+
+        // 保存待记录的路径，显示记录面板
+        recordPanel.setPendingPaths(paths);
+        recordPanel.setPendingText(""); // Clear any pending text
+        recordPanel.setNote("");
+        recordPanel.setRemindEnabled(false);
+        recordPanel.setRemindAt(null);
+
+        // Close other panels
+        setPanelVisible(false);
+        setChatDialogVisible(false);
+        setSettingsVisible(false);
+        papaSpace.setVisible(false);
+        reminder.hide();
+        setChatInput("");
+        setChatImage(null);
+        setChatAction(null);
+        setChatResult("");
+        setChatResultExpanded(false);
+
+        // 确保 eat_chomp 状态持续至少 1000ms（动画时长），然后显示记录面板
+        const elapsed = Date.now() - dropStartTime;
+        const remaining = Math.max(1000 - elapsed, 200);
+        eatChompTimeoutRef.current = window.setTimeout(() => {
+          setPetState("idle_breathe");
+          recordPanel.setVisible(true);
+          // Focus note input
+          setTimeout(() => {
+            recordPanel.noteRef.current?.focus();
+          }, 100);
+          eatChompTimeoutRef.current = null;
+        }, Math.max(remaining, 1000));
       }
     });
 
     return () => {
       void unlistenDropEvent.then((f) => f());
     };
-  }, [isMuted]);
+  }, []);
 
   useEffect(() => {
-    console.log("Setting up drag event listeners, isMuted:", isMuted);
-    
+    console.log("Setting up drag event listeners");
+
     function handleDomDrag(event: DragEvent) {
       const name = event.type;
-      console.log("Drag event triggered:", name, "isMuted:", isMuted);
-      
-      setDebugInfo((prev) => ({
-        ...prev,
-        lastDomDrag: name,
-        domDragCount: prev.domDragCount + 1
-      }));
-      
+      console.log("Drag event triggered:", name);
+
       if (name === "dragenter") {
         event.preventDefault();
-        console.log("dragenter: isMuted =", isMuted);
-        // 当拖拽进入窗口时，进入等待状态
-        // 使用函数式更新避免闭包问题
-        if (!isMuted) {
-          console.log("Drag enter detected, setting waiting_for_drop");
-          setPetState((currentState) => {
-            console.log("Current state:", currentState);
-            if (currentState !== "waiting_for_drop" && currentState !== "eat_chomp") {
-              console.log("State changed to waiting_for_drop");
-              return "waiting_for_drop";
-            }
-            return currentState;
-          });
-        } else {
-          console.log("Muted, not setting waiting state");
-        }
+        console.log("Drag enter detected, setting waiting_for_drop");
+        setPetState((currentState) => {
+          if (currentState !== "waiting_for_drop" && currentState !== "eat_chomp") {
+            return "waiting_for_drop";
+          }
+          return currentState;
+        });
       }
       if (name === "dragover") {
         event.preventDefault();
-        // dragover 持续触发，确保保持等待状态
-        if (!isMuted) {
-          setPetState((currentState) => {
-            if (currentState === "idle_breathe" || currentState === "idle_blink") {
-              console.log("dragover: changing state from", currentState, "to waiting_for_drop");
-              return "waiting_for_drop";
-            }
-            return currentState;
-          });
-        }
+        setPetState((currentState) => {
+          if (currentState === "idle_breathe" || currentState === "idle_blink") {
+            return "waiting_for_drop";
+          }
+          return currentState;
+        });
       }
       if (name === "dragleave") {
-        // 当拖拽离开窗口时，恢复空闲状态
-        if (!isMuted) {
-          setPetState((currentState) => {
-            if (currentState === "waiting_for_drop") {
-              return "idle_breathe";
-            }
-            return currentState;
-          });
-        }
+        setPetState((currentState) => {
+          if (currentState === "waiting_for_drop") {
+            return "idle_breathe";
+          }
+          return currentState;
+        });
       }
       if (name === "drop") {
         event.preventDefault();
-        // DOM drop 事件由 onDragDropEvent 处理，这里只做防御性处理
-        // 如果 Tauri 事件没有触发，这里作为备用
-        if (!isMuted) {
-          setPetState((currentState) => {
-            if (currentState !== "eat_chomp") {
-              return "eat_chomp";
-            }
-            return currentState;
-          });
-          window.setTimeout(() => setPetState("idle_breathe"), 1000);
-        }
+        setPetState((currentState) => {
+          if (currentState !== "eat_chomp") {
+            return "eat_chomp";
+          }
+          return currentState;
+        });
+        window.setTimeout(() => setPetState("idle_breathe"), 1000);
       }
     }
 
-    // 同时监听 document 和 window
     document.addEventListener("dragenter", handleDomDrag, true);
     document.addEventListener("dragover", handleDomDrag, true);
     document.addEventListener("dragleave", handleDomDrag, true);
     document.addEventListener("drop", handleDomDrag, true);
-    
+
     window.addEventListener("dragenter", handleDomDrag, true);
     window.addEventListener("dragover", handleDomDrag, true);
     window.addEventListener("dragleave", handleDomDrag, true);
     window.addEventListener("drop", handleDomDrag, true);
-    
-    console.log("Drag event listeners added to both document and window");
 
     return () => {
       document.removeEventListener("dragenter", handleDomDrag, true);
       document.removeEventListener("dragover", handleDomDrag, true);
       document.removeEventListener("dragleave", handleDomDrag, true);
       document.removeEventListener("drop", handleDomDrag, true);
-      
+
       window.removeEventListener("dragenter", handleDomDrag, true);
       window.removeEventListener("dragover", handleDomDrag, true);
       window.removeEventListener("dragleave", handleDomDrag, true);
       window.removeEventListener("drop", handleDomDrag, true);
     };
-  }, [isMuted]);
+  }, []);
 
   useEffect(() => {
     const unlistenResize = appWindow.onResized(async () => {
@@ -802,10 +756,7 @@ export default function App() {
         const size = await appWindow.innerSize();
         setCurrentWindowSize({ width: size.width, height: size.height });
       } catch (error) {
-        setDebugInfo((prev) => ({
-          ...prev,
-          lastResize: "error"
-        }));
+        console.error("Failed to get window size:", error);
       }
     });
 
@@ -816,14 +767,14 @@ export default function App() {
 
   // 监听 eat_chomp 状态，触发吃动画
   useEffect(() => {
-    if (petState === "eat_chomp" && !isMuted) {
+    if (petState === "eat_chomp") {
       gsapStateRef.current?.playEat();
     }
-  }, [petState, isMuted]);
+  }, [petState]);
 
   useEffect(() => {
     const gsapState = gsapStateRef.current;
-    if (!gsapState || isMuted) return;
+    if (!gsapState) return;
 
     const mapState = (state: PetState): string => {
       switch (state) {
@@ -835,17 +786,14 @@ export default function App() {
         case "think":
           return "think";
         case "success_happy":
-        case "happy":
-          return "happy";
+          return "success_happy";
         case "error_confused":
-        case "angry":
-          return "angry";
+          return "error_confused";
         case "waiting_for_drop":
         case "drool":
           return "drool";
         case "comfy":
         case "shy":
-        case "cry":
         case "excited":
         case "tired":
         case "surprised":
@@ -862,12 +810,12 @@ export default function App() {
       return;
     }
     gsapState.setState(mapState(petState));
-  }, [petState, isMuted]);
+  }, [petState]);
 
   // 监听 waiting_for_drop 状态，触发等待动画
   useEffect(() => {
-    console.log("petState changed to:", petState, "isMuted:", isMuted);
-    if (petState === "waiting_for_drop" && !isMuted) {
+    console.log("petState changed to:", petState);
+    if (petState === "waiting_for_drop") {
       console.log("Triggering waiting animation");
       gsapStateRef.current?.setState("drool");
     } else if (petState !== "waiting_for_drop" && mouthLayerRef.current) {
@@ -875,12 +823,10 @@ export default function App() {
       const mouth = mouthLayerRef.current;
       gsap.set(mouth, { clearProps: "transform" });
     }
-  }, [petState, isMuted]);
+  }, [petState]);
 
   // Listen to behavior analysis and infer user mood
   useEffect(() => {
-    if (isMuted) return;
-
     const unlisten = listen<BehaviorAnalysis>("behavior-analysis", (event) => {
       const analysis = event.payload;
       setBehaviorAnalysis(analysis);
@@ -922,7 +868,7 @@ export default function App() {
     return () => {
       unlisten.then(fn => fn());
     };
-  }, [isMuted, userMood]);
+  }, [userMood]);
 
   // Listen to reminder-due events (Phase 3)
   useEffect(() => {
@@ -941,20 +887,18 @@ export default function App() {
       reminder.show(payload);
 
       // Trigger excited animation
-      if (!isMuted) {
-        setPetState("excited");
-        gsapStateRef.current?.setState("excited");
-      }
+      setPetState("excited");
+      gsapStateRef.current?.setState("excited");
     });
 
     return () => {
       unlisten.then(fn => fn());
     };
-  }, [isMuted]);
+  }, []);
 
   // Trigger proactive conversation based on mood
   useEffect(() => {
-    if (isMuted || !userMood || panelVisible) return;
+    if (!userMood || panelVisible) return;
     
     const now = Date.now();
     if (now - lastConversationTime < CONVERSATION_COOLDOWN) return;
@@ -1023,29 +967,115 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
     // Trigger conversation after mood is stable for 5 seconds
     const timer = setTimeout(triggerConversation, 5000);
     return () => clearTimeout(timer);
-  }, [userMood, isMuted, panelVisible, lastConversationTime, behaviorAnalysis, llmSettings]);
+  }, [userMood, panelVisible, lastConversationTime, behaviorAnalysis, llmSettings]);
+
+  // State rotation system - rotate between various idle states
+  const stateRotationRef = useRef<number | null>(null);
+  const lastActivityTimeRef = useRef<number>(Date.now());
+  const currentPetStateRef = useRef<PetState>(petState);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    currentPetStateRef.current = petState;
+  }, [petState]);
+
+  // Update activity time based on behavior analysis
+  useEffect(() => {
+    if (behaviorAnalysis && behaviorAnalysis.activityLevel > 0.2) {
+      lastActivityTimeRef.current = Date.now();
+    }
+  }, [behaviorAnalysis]);
 
   useEffect(() => {
-    if (isMuted) return;
+    // Define idle states for rotation
+    const normalIdleStates: PetState[] = ["idle_breathe", "shy"];
+    const tiredIdleStates: PetState[] = ["tired", "comfy", "sleepy"];
+    const excitedStates: PetState[] = ["surprised", "excited"];
 
-    function scheduleBlink() {
-      idleTimeoutRef.current = window.setTimeout(() => {
-        if (petState === "idle_breathe") {
-          setPetState("idle_blink");
-          window.setTimeout(() => setPetState("idle_breathe"), 300);
-        }
-        scheduleBlink();
-      }, getRandomBlinkDelay());
+    function getRandomState(states: PetState[]): PetState {
+      return states[Math.floor(Math.random() * states.length)];
     }
 
-    scheduleBlink();
+    function scheduleStateChange() {
+      // Random interval: 8-20 seconds for state changes
+      const interval = 8000 + Math.random() * 12000;
+
+      stateRotationRef.current = window.setTimeout(() => {
+        const currentState = currentPetStateRef.current;
+
+        // Only change state if in an idle-like state (not eating, thinking, etc.)
+        const activeStates: PetState[] = [
+          "eat_chomp", "thinking", "waiting_for_drop",
+          "success_happy", "error_confused", "chew", "eat_action"
+        ];
+
+        if (activeStates.includes(currentState)) {
+          scheduleStateChange();
+          return;
+        }
+
+        // Check if any panel is open (use current values via closure)
+        // We'll check this via a simple approach - if state is not idle-like, skip
+
+        const timeSinceActivity = Date.now() - lastActivityTimeRef.current;
+        const isLongIdle = timeSinceActivity > 60000; // 1 minute without activity
+
+        let newState: PetState;
+        const random = Math.random();
+
+        if (isLongIdle) {
+          // Long idle: mostly tired/comfy states
+          if (random < 0.7) {
+            newState = getRandomState(tiredIdleStates);
+          } else if (random < 0.9) {
+            newState = getRandomState(normalIdleStates);
+          } else {
+            // Rare surprise even when idle
+            newState = "surprised";
+          }
+        } else {
+          // Normal activity: mostly idle/shy, occasionally excited
+          if (random < 0.6) {
+            newState = getRandomState(normalIdleStates);
+          } else if (random < 0.85) {
+            // Sometimes show comfy even with activity
+            newState = getRandomState(["comfy", "shy"]);
+          } else if (random < 0.95) {
+            // Occasionally excited/surprised
+            newState = getRandomState(excitedStates);
+          } else {
+            // Rare drool
+            newState = "drool";
+          }
+        }
+
+        // Don't set the same state twice in a row (unless it's idle_breathe)
+        if (newState !== currentState || newState === "idle_breathe") {
+          setPetState(newState);
+          gsapStateRef.current?.setState(newState);
+
+          // For some states, return to idle after a short duration
+          const temporaryStates: PetState[] = ["surprised", "excited", "drool"];
+          if (temporaryStates.includes(newState)) {
+            window.setTimeout(() => {
+              setPetState("idle_breathe");
+              gsapStateRef.current?.setState("idle_breathe");
+            }, 2000 + Math.random() * 2000);
+          }
+        }
+
+        scheduleStateChange();
+      }, interval);
+    }
+
+    scheduleStateChange();
 
     return () => {
-      if (idleTimeoutRef.current) {
-        window.clearTimeout(idleTimeoutRef.current);
+      if (stateRotationRef.current) {
+        window.clearTimeout(stateRotationRef.current);
       }
     };
-  }, [petState, isMuted]);
+  }, []);
 
   useEffect(() => {
     if (!panelVisible) return;
@@ -1087,12 +1117,23 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
   });
 
   useEffect(() => {
-    // Determine target window size based on state
+    // Determine target window size based on which panel is visible
+    // Priority: papaSpace > filePanel/chat/record > settings/reminder > collapsed
     let next;
-    if (panelVisible || settingsVisible || chatDialogVisible || recordPanel.visible || papaSpace.visible || reminder.toastVisible) {
-      next = WINDOW_EXPANDED; // Full expansion when any panel is visible
+    if (papaSpace.visible) {
+      next = WINDOW_SIZES.papaSpace;
+    } else if (panelVisible) {
+      next = WINDOW_SIZES.filePanel;
+    } else if (chatDialogVisible) {
+      next = WINDOW_SIZES.chat;
+    } else if (recordPanel.visible) {
+      next = WINDOW_SIZES.record;
+    } else if (settingsVisible) {
+      next = WINDOW_SIZES.settings;
+    } else if (reminder.toastVisible) {
+      next = WINDOW_SIZES.reminder;
     } else {
-      next = WINDOW_COLLAPSED; // Collapsed when idle
+      next = WINDOW_SIZES.collapsed;
     }
 
     // Only resize if size actually changed
@@ -1108,17 +1149,10 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
     // Use CSS transition for visual smoothness, only call Rust at start and end
     // Immediate resize to target for instant response, then smooth transition
     void invoke("set_window_size", { width: next.width, height: next.height }).catch((error) => {
-      setDebugInfo((prev) => ({
-        ...prev,
-        lastResize: "error"
-      }));
+      console.error("Failed to set window size:", error);
     });
 
     setCurrentWindowSize(next);
-    setDebugInfo((prev) => ({
-      ...prev,
-      lastResize: `${next.width}x${next.height}`
-    }));
   }, [panelVisible, settingsVisible, chatDialogVisible, recordPanel.visible, papaSpace.visible, reminder.toastVisible, currentWindowSize]);
 
 
@@ -1302,15 +1336,6 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
             .to(q("#dot3"), { y: 0, scale: 1.0, duration: 0.35 }, 0.8);
           break;
         }
-        case "happy": {
-          stateTL = gsap.timeline({ defaults: { ease: "sine.inOut" } })
-            .to(q("#bunWrap"), { scaleX: 1.03, scaleY: 0.97, duration: 0.18 }, 0)
-            .to(q("#face"), { y: -2, duration: 0.18 }, 0)
-            .to(q("#mouth"), { morphSVG: { shape: shapes.mouthSmile, shapeIndex: "auto" }, duration: 0.14 }, 0)
-            .to(eyeBlinkTargets, { y: 2, duration: 0.18 }, 0)
-            .to(q("#bunWrap"), { scaleX: 1, scaleY: 1, duration: 0.28, ease: "elastic.out(1,0.55)" }, 0.18);
-          break;
-        }
         case "comfy": {
           // 舒服：眯眼 + 缓慢摇摆
           // 直接在眼睛上设置 scaleY（与 gsap_example.html 保持一致）
@@ -1342,30 +1367,6 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
             .to(q("#face"), { rotation: -2.2, y: 1.5, duration: 0.8 }, 0)
             .to(q("#face"), { rotation: 1.4, y: 0.5, duration: 0.8 }, 0.8);
           stateTL.to(q("#mouth"), { morphSVG: { shape: shapes.mouthSmile, shapeIndex: "auto" }, duration: 0.2 }, 0);
-          break;
-        }
-        case "cry": {
-          // 哭哭：倒八眼 + 委屈嘴 + 小抖 + 泪滴下落循环
-          // 与 gsap_example.html 保持一致
-          gsap.set(q("#eyesCircle"), { opacity: 0 });
-          gsap.set(q("#eyesCry"), { opacity: 1 });
-          gsap.set(q("#tears"), { opacity: 1 });
-          gsap.set(q("#mouth"), { morphSVG: { shape: shapes.mouthCry, shapeIndex: "auto" } });
-          stateTL = gsap.timeline({ repeat: -1, defaults: { ease: "sine.inOut" } });
-          // 小抖（哭唧唧）
-          stateTL
-            .to(q("#face"), { x: 1.2, duration: 0.08 }, 0)
-            .to(q("#face"), { x: -1.2, duration: 0.08, repeat: 3, yoyo: true }, 0.08)
-            .to(q("#face"), { x: 0, duration: 0.10 }, 0.40);
-          // 泪滴循环：下落 + 淡出 + 回位
-          stateTL
-            .fromTo(q("#tearL"), { y: 0, opacity: 0.9 }, { y: 18, opacity: 0.05, duration: 0.55, ease: "power2.in" }, 0.05)
-            .fromTo(q("#tearR"), { y: 0, opacity: 0.9 }, { y: 18, opacity: 0.05, duration: 0.55, ease: "power2.in" }, 0.15)
-            .set(tearTargets, { y: 0, opacity: 0.85 }, 0.70);
-          // 让哭眼也有点"挤"
-          stateTL
-            .to(q("#cryEyeL, #cryEyeR"), { y: 1.5, duration: 0.35 }, 0)
-            .to(q("#cryEyeL, #cryEyeR"), { y: 0, duration: 0.45 }, 0.35);
           break;
         }
         case "drool": {
@@ -1416,17 +1417,6 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
             .to(q("#face"), { y: 3.5, rotation: -1.2, duration: 1.2 }, 0)
             .to(q("#bunWrap"), { y: 2, scaleX: 1.0, scaleY: 1.0, duration: 1.2 }, 1.2)
             .to(q("#face"), { y: 2.0, rotation: 1.0, duration: 1.2 }, 1.2);
-          break;
-        }
-        case "angry": {
-          gsap.set(q("#brows"), { opacity: 1 });
-          stateTL = gsap.timeline({ defaults: { ease: "power2.out" } })
-            .to(q("#mouth"), { morphSVG: { shape: shapes.mouthAngry, shapeIndex: "auto" }, duration: 0.16 }, 0)
-            .to(q("#browL"), { rotation: -18, y: 4, duration: 0.18, transformOrigin: "50% 50%" }, 0)
-            .to(q("#browR"), { rotation: 18, y: 4, duration: 0.18, transformOrigin: "50% 50%" }, 0)
-            .to(q("#face"), { x: 1.2, duration: 0.06 }, 0.18)
-            .to(q("#face"), { x: -1.2, duration: 0.06, repeat: 3, yoyo: true }, 0.24)
-            .to(q("#face"), { x: 0, duration: 0.08 }, 0.54);
           break;
         }
         case "surprised": {
@@ -1513,7 +1503,7 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
   function triggerExpressionAnimation(kind: "summarize" | "actions" | "remember") {
     const stateMap = {
       summarize: "think",
-      actions: "happy",
+      actions: "excited",
       remember: "comfy"
     } as const;
     gsapStateRef.current?.setState(stateMap[kind]);
@@ -1704,7 +1694,7 @@ Please use first person, with a natural, warm, and cute tone, not too formal.`;
     const success = await reminder.dismiss();
     if (success) {
       setPetState("success_happy");
-      gsapStateRef.current?.setState("happy");
+      gsapStateRef.current?.setState("success_happy");
       setTimeout(() => {
         setPetState("idle_breathe");
       }, 1000);
@@ -1913,6 +1903,10 @@ Keep it warm and concise. If few records, just give a simple reflection.`;
     setChatResultExpanded(false);
     // Close record panel
     recordPanel.close();
+    // Close Papa Space
+    papaSpace.close();
+    // Close reminder toast
+    reminder.hide();
 
     // Clear any pending timeouts
     if (successHappyTimeoutRef.current) {
@@ -2017,15 +2011,12 @@ Keep it warm and concise. If few records, just give a simple reflection.`;
       }}
       onDragEnter={(event: React.DragEvent<HTMLDivElement>) => {
         event.preventDefault();
-        // 触发等待状态
-        if (!isMuted) {
-          setPetState((currentState) => {
-            if (currentState !== "waiting_for_drop" && currentState !== "eat_chomp") {
-              return "waiting_for_drop";
-            }
-            return currentState;
-          });
-        }
+        setPetState((currentState) => {
+          if (currentState !== "waiting_for_drop" && currentState !== "eat_chomp") {
+            return "waiting_for_drop";
+          }
+          return currentState;
+        });
       }}
       onDragLeave={(event: React.DragEvent<HTMLDivElement>) => {
         event.preventDefault();
@@ -2034,19 +2025,16 @@ Keep it warm and concise. If few records, just give a simple reflection.`;
         const x = event.clientX;
         const y = event.clientY;
         if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
-          if (!isMuted) {
-            setPetState((currentState) => {
-              if (currentState === "waiting_for_drop") {
-                return "idle_breathe";
-              }
-              return currentState;
-            });
-          }
+          setPetState((currentState) => {
+            if (currentState === "waiting_for_drop") {
+              return "idle_breathe";
+            }
+            return currentState;
+          });
         }
       }}
       onDrop={(event: React.DragEvent<HTMLDivElement>) => {
         event.preventDefault();
-        if (isMuted) return;
 
         // Debug logging (can be removed in production)
         console.log("DOM onDrop - types:", event.dataTransfer.types);
@@ -2160,11 +2148,6 @@ Keep it warm and concise. If few records, just give a simple reflection.`;
 
         // No files or text detected in drop
       }}
-      onContextMenu={(event: React.MouseEvent<HTMLDivElement>) => {
-        event.preventDefault();
-        console.log("Context menu opened at:", event.clientX, event.clientY);
-        setContextMenu({ x: event.clientX, y: event.clientY, visible: true });
-      }}
     >
       <div
         className={`pet-stage ${panelVisible || settingsVisible || chatDialogVisible || recordPanel.visible || papaSpace.visible || reminder.toastVisible ? "panel-open" : ""} ${
@@ -2175,6 +2158,11 @@ Keep it warm and concise. If few records, just give a simple reflection.`;
         <div
           ref={petWrapperRef}
           className="pet-wrapper"
+          onContextMenu={(event: React.MouseEvent<HTMLDivElement>) => {
+            event.preventDefault();
+            event.stopPropagation();
+            setContextMenu({ x: event.clientX, y: event.clientY, visible: true });
+          }}
         >
           <div className="pet-layer body" ref={bodyLayerRef}>
             <svg viewBox="0 0 520 420" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
@@ -2396,7 +2384,6 @@ Keep it warm and concise. If few records, just give a simple reflection.`;
         <SettingsPanel
           visible={settingsVisible}
           llmSettings={llmSettings}
-          onClose={() => setSettingsVisible(false)}
           onProviderChange={updateLlmProvider}
           onSettingsChange={updateLlmSettings}
         />
@@ -2439,7 +2426,6 @@ Keep it warm and concise. If few records, just give a simple reflection.`;
           showSummary={papaSpace.showSummary}
           editingEvent={papaSpace.editingEvent}
           editNote={papaSpace.editNote}
-          onClose={papaSpace.close}
           onDateChange={papaSpace.changeDate}
           onStartEdit={papaSpace.startEdit}
           onRemoveEvent={papaSpace.removeEvent}
@@ -2454,123 +2440,10 @@ Keep it warm and concise. If few records, just give a simple reflection.`;
           formatDateDisplay={papaSpace.formatDateDisplay}
         />
       </div>
-      <div className="state-label">{activeState}</div>
-      <div className="pet-controls">
-        <button
-          className="mute-toggle"
-          data-no-drag
-          onClick={() => setIsMuted((prev) => !prev)}
-        >
-          {isMuted ? "Wake" : "Sleep"}
-        </button>
-        <button
-          className="debug-toggle"
-          data-no-drag
-          onClick={() => setShowDebugControls((prev) => !prev)}
-        >
-          {showDebugControls ? "Hide" : "Show"} states
-        </button>
-        <button
-          className="debug-toggle"
-          data-no-drag
-          onClick={() => {
-            // Close other panels first
-            setChatDialogVisible(false);
-            setSettingsVisible(false);
-            recordPanel.setVisible(false);
-            papaSpace.setVisible(false);
-            reminder.hide();
-
-            setDropRecord({
-              id: 0,
-              path: "demo.txt",
-              hash: "demo-hash",
-              createdAt: Date.now()
-            });
-            setPanelVisible(true);
-            setPanelLockUntil(Date.now() + 600);
-            setPanelMode(null);
-            setPanelText("");
-            setPetState("eat_chomp");
-            window.setTimeout(() => setPetState("idle_breathe"), 1000);
-          }}
-        >
-          Demo drop
-        </button>
-        <button
-          className="debug-toggle"
-          data-no-drag
-          onClick={() => {
-            console.log("Manual trigger: setting waiting_for_drop");
-            setPetState("waiting_for_drop");
-            // 不自动重置，让用户手动测试
-          }}
-        >
-          Test waiting
-        </button>
-      </div>
-
-      
-
-      <div className="pet-debug">
-        <div>
-          {dropRecord ? `Last file: ${dropRecord.hash.slice(0, 10)}...` : ""}
-        </div>
-        <div className="pet-debug-line">
-          DOM drag: {debugInfo.lastDomDrag} ({debugInfo.domDragCount})
-        </div>
-        <div className="pet-debug-line">Resize: {debugInfo.lastResize}</div>
-        <div className="pet-debug-line">
-          Panel: {panelVisible ? "open" : "closed"}
-        </div>
-        <div className="pet-debug-line">
-          Window: {currentWindowSize.width}x{currentWindowSize.height}
-        </div>
-      </div>
-
-      {showDebugControls && (
-        <div className="state-controls" data-no-drag>
-          {(
-            [
-              "idle",
-              "think",
-              "happy",
-              "comfy",
-              "shy",
-              "cry",
-              "drool",
-              "excited",
-              "tired",
-              "angry",
-              "surprised",
-              "sleepy",
-              "chew",
-              "eat_action",
-              "idle_breathe",
-              "idle_blink",
-              "waiting_for_drop",
-              "eat_chomp",
-              "thinking",
-              "success_happy",
-              "error_confused"
-            ] as PetState[]
-          ).map((state) => (
-            <button
-              key={state}
-              onClick={() => setPetState(state)}
-              className={state === petState ? "active" : ""}
-            >
-              {state}
-            </button>
-          ))}
-        </div>
-      )}
-
       <ContextMenu
         x={contextMenu.x}
         y={contextMenu.y}
         visible={contextMenu.visible}
-        isMuted={isMuted}
         onClose={() => setContextMenu({ ...contextMenu, visible: false })}
         onOpenPapaSpace={() => void openPapaSpace()}
         onOpenSettings={() => {
@@ -2581,7 +2454,6 @@ Keep it warm and concise. If few records, just give a simple reflection.`;
           reminder.hide();
           setSettingsVisible(true);
         }}
-        onToggleMute={() => setIsMuted((prev) => !prev)}
       />
 
       <div className="pet-assets" aria-hidden>

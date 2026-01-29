@@ -5,22 +5,18 @@ type ContextMenuProps = {
   x: number;
   y: number;
   visible: boolean;
-  isMuted: boolean;
   onClose: () => void;
   onOpenPapaSpace: () => void;
   onOpenSettings: () => void;
-  onToggleMute: () => void;
 };
 
 export function ContextMenu({
   x,
   y,
   visible,
-  isMuted,
   onClose,
   onOpenPapaSpace,
   onOpenSettings,
-  onToggleMute,
 }: ContextMenuProps) {
   if (!visible) return null;
 
@@ -57,9 +53,6 @@ export function ContextMenu({
         }}
       >
         ⚙️ Settings
-      </button>
-      <button onClick={onToggleMute}>
-        {isMuted ? "🔔 Wake" : "😴 Sleep"}
       </button>
       <button onClick={() => void handleHide()}>
         👻 Hide 10s

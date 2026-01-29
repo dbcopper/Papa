@@ -6,7 +6,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tauri::{DragDropEvent, Emitter, Manager, WindowEvent};
+use tauri::{Emitter, Manager};
 use device_query::{DeviceQuery, DeviceState, Keycode};
 
 fn generate_id() -> String {
@@ -344,28 +344,6 @@ fn process_drop_paths(
   result
 }
 
-fn dispatch_js_event(window: &tauri::WebviewWindow, event: &str) {
-  let script = format!(
-    "window.dispatchEvent(new Event({:?}));",
-    event
-  );
-  let _ = window.eval(&script);
-}
-
-fn dispatch_js_event_with_payload<T: Serialize>(
-  window: &tauri::WebviewWindow,
-  event: &str,
-  payload: &T,
-) {
-  if let Ok(json) = serde_json::to_string(payload) {
-    let script = format!(
-      "window.dispatchEvent(new CustomEvent({:?}, {{ detail: {} }}));",
-      event, json
-    );
-    let _ = window.eval(&script);
-  }
-}
-
 #[tauri::command]
 fn save_mock_result(
   state: tauri::State<DbState>,
@@ -427,9 +405,8 @@ fn set_window_size(
     .get_webview_window("main")
     .ok_or_else(|| "missing window".to_string())?;
   
-  // Get current position and size
+  // Get current position
   let current_position = window.outer_position().map_err(|e| e.to_string())?;
-  let current_size = window.outer_size().map_err(|e| e.to_string())?;
   
   // Keep left and top position fixed, only expand to the right
   // This keeps the pet in the same screen position

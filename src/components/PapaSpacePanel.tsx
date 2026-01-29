@@ -11,7 +11,6 @@ type PapaSpacePanelProps = {
   showSummary: boolean;
   editingEvent: TimelineEventWithAttachments | null;
   editNote: string;
-  onClose: () => void;
   onDateChange: (dateKey: string) => void;
   onStartEdit: (item: TimelineEventWithAttachments) => void;
   onRemoveEvent: (id: number) => void;
@@ -36,7 +35,6 @@ export function PapaSpacePanel({
   showSummary,
   editingEvent,
   editNote,
-  onClose,
   onDateChange,
   onStartEdit,
   onRemoveEvent,
@@ -56,13 +54,6 @@ export function PapaSpacePanel({
     <div className="bubble-panel papa-space" data-no-drag>
       <div className="bubble-header">
         <span>📋 Papa Space</span>
-        <button
-          className="close-button"
-          onClick={onClose}
-          data-no-drag
-        >
-          ×
-        </button>
       </div>
       <div className="papa-space-content">
         {/* Action buttons */}
