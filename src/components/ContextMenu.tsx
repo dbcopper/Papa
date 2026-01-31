@@ -27,8 +27,17 @@ export function ContextMenu({
     await invoke("hide_for", { ms: 10000 });
   };
 
-  const handleQuit = () => {
-    void appWindow.close();
+  const handleQuit = async () => {
+    try {
+      await appWindow.close();
+    } catch (e) {
+      // Fallback: try destroy
+      try {
+        await appWindow.destroy();
+      } catch {
+        console.error("Failed to quit:", e);
+      }
+    }
   };
 
   return (
@@ -57,7 +66,7 @@ export function ContextMenu({
       <button onClick={() => void handleHide()}>
         👻 Hide 10s
       </button>
-      <button onClick={handleQuit} className="context-menu-quit">
+      <button onClick={() => void handleQuit()} className="context-menu-quit">
         ❌ Quit
       </button>
     </div>

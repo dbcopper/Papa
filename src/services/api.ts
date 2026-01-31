@@ -74,16 +74,42 @@ export async function listSettings(): Promise<[string, string][]> {
 
 // ============ Export API ============
 
-export async function generateDailyExport(dateKey: string, format: string): Promise<string> {
-  return invoke<string>("generate_daily_export", { dateKey, format });
+export async function generateDailyExport(dateKey: string, format: string, customPath?: string): Promise<string> {
+  return invoke<string>("generate_daily_export", { dateKey, format, customPath: customPath || null });
 }
 
 export async function listExports(): Promise<DailyExport[]> {
   return invoke<DailyExport[]>("list_exports");
 }
 
-export async function openExportFolder(): Promise<string> {
-  return invoke<string>("open_export_folder");
+export async function openExportFolder(customPath?: string): Promise<string> {
+  return invoke<string>("open_export_folder", { customPath: customPath || null });
+}
+
+// ============ RAG API ============
+
+export type RagContext = {
+  events: Array<{
+    id: string;
+    event_type: string;
+    title: string | null;
+    note: string | null;
+    text_content: string | null;
+    created_at: number;
+    source: string | null;
+    is_deleted: boolean;
+  }>;
+  attachments: Array<{
+    id: string;
+    event_id: string;
+    kind: string;
+    original_path: string;
+    file_name: string | null;
+  }>;
+};
+
+export async function searchForRag(query: string, limit?: number): Promise<RagContext> {
+  return invoke<RagContext>("search_for_rag", { query, limit });
 }
 
 // ============ Window API ============

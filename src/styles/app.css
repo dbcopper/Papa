@@ -400,6 +400,7 @@ body,
   justify-content: space-between;
   align-items: center;
   margin-bottom: 4px;
+  flex-shrink: 0;
 }
 
 .bubble-meta {
@@ -643,23 +644,32 @@ body,
   min-width: 250px;
   top: 10px;
   transform: none;
+  /* 限制高度在窗口内，留出上下边距 */
+  height: calc(var(--window-height, 360px) - 20px);
+  max-height: calc(var(--window-height, 360px) - 20px);
 }
 
 .file-panel {
-  width: min(300px, calc(var(--window-width, 720px) - var(--pet-size) - var(--bubble-gap) - 20px));
-  min-width: 280px;
+  width: min(250px, calc(var(--window-width, 720px) - var(--pet-size) - var(--bubble-gap) - 20px));
+  min-width: 200px;
 }
 
-.file-panel .bubble-output {
-  max-height: 230px;
+.file-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.file-panel-expanded {
-  min-height: 280px;
+.file-name {
+  font-size: 11px;
+  color: #2d2a26;
+  word-break: break-all;
 }
 
-.file-panel-expanded .bubble-output {
-  min-height: 120px;
+.file-hint {
+  font-size: 9px;
+  color: rgba(60, 60, 60, 0.5);
+  font-style: italic;
 }
 
 .close-button {
@@ -751,6 +761,50 @@ body,
   font-size: 9px;
   color: rgba(60, 60, 60, 0.6);
   margin-top: -2px;
+}
+
+.settings-divider {
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  margin: 8px 0;
+}
+
+.settings-export-path {
+  background: rgba(255, 248, 238, 0.7);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+}
+
+.settings-export-path-text {
+  font-size: 10px;
+  color: #555;
+  word-break: break-all;
+  display: block;
+}
+
+.settings-export-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.settings-export-btn {
+  padding: 4px 10px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+  font-size: 10px;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.settings-export-btn:hover {
+  background: rgba(255, 255, 255, 1);
+  border-color: rgba(0, 0, 0, 0.25);
+}
+
+.settings-export-reset {
+  color: #888;
 }
 
 .settings-save-button {
@@ -974,6 +1028,115 @@ body,
   font-style: italic;
 }
 
+/* RAG Chat Styles */
+.chat-header-hint {
+  font-size: 9px;
+  color: rgba(60, 60, 60, 0.5);
+  margin-left: 6px;
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0;
+  min-height: 100px;
+  max-height: 200px;
+}
+
+.chat-messages::-webkit-scrollbar {
+  width: 5px;
+}
+
+.chat-messages::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-messages::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+}
+
+.chat-empty {
+  text-align: center;
+  padding: 20px;
+  color: rgba(60, 60, 60, 0.5);
+  font-size: 11px;
+  font-style: italic;
+}
+
+.chat-message {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.chat-message-icon {
+  flex-shrink: 0;
+  font-size: 14px;
+}
+
+.chat-message-content {
+  flex: 1;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.chat-message-user .chat-message-content {
+  background: var(--accent);
+  color: #2d2a26;
+}
+
+.chat-message-assistant .chat-message-content {
+  background: rgba(255, 248, 238, 0.9);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.chat-typing {
+  color: rgba(60, 60, 60, 0.6);
+  font-style: italic;
+}
+
+.chat-input-row {
+  display: flex;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.chat-input-row .chat-input {
+  flex: 1;
+}
+
+.chat-send-button {
+  padding: 8px 14px;
+  background: var(--accent);
+  border: 1px solid var(--accent-strong);
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #2d2a26;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: background 0.2s;
+}
+
+.chat-send-button:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+.chat-send-button:disabled {
+  background: rgba(0, 0, 0, 0.1);
+  border-color: rgba(0, 0, 0, 0.1);
+  color: rgba(60, 60, 60, 0.5);
+  cursor: not-allowed;
+}
+
 /* ============ Record Panel (Phase 2) ============ */
 
 .record-panel {
@@ -1021,7 +1184,7 @@ body,
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: 80px;
+  max-height: 160px;
   overflow-y: auto;
 }
 
@@ -1047,6 +1210,28 @@ body,
   text-overflow: ellipsis;
   white-space: nowrap;
   flex: 1;
+}
+
+/* Image preview */
+.record-image-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.record-image-thumbnail {
+  max-width: 100%;
+  max-height: 120px;
+  border-radius: 6px;
+  object-fit: contain;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.record-image-preview .record-file-name {
+  text-align: center;
+  width: 100%;
 }
 
 /* Text preview for dropped text */

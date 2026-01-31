@@ -22,7 +22,7 @@ export const WINDOW_COLLAPSED: WindowSize = { width: 320, height: 360 };
 // Dynamic window sizes for different panels
 export const WINDOW_SIZES = {
   collapsed: { width: 320, height: 360 },
-  settings: { width: 620, height: 400 },      // Settings panel (narrower)
+  settings: { width: 620, height: 400 },      // Settings panel
   chat: { width: 640, height: 420 },          // Chat dialog
   filePanel: { width: 640, height: 420 },     // File drop panel
   record: { width: 620, height: 420 },        // Record panel

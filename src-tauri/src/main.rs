@@ -1,3 +1,6 @@
+// Hide console window on Windows in release builds
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use chrono::{DateTime, Local, NaiveDate, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -1065,6 +1068,125 @@ fn list_pending_reminders(
 
 // ============ Settings Commands ============
 
+// ============ RAG Search Command ============
+
+#[derive(Serialize)]
+struct RagContext {
+  events: Vec<TimelineEvent>,
+  attachments: Vec<Attachment>,
+}
+
+#[tauri::command]
+fn search_for_rag(
+  state: tauri::State<DbState>,
+  query: String,
+  limit: Option<i32>,
+) -> Result<RagContext, String> {
+  let _guard = state.lock.lock().map_err(|_| "db lock".to_string())?;
+  let conn = rusqlite::Connection::open(&state.path).map_err(|e| e.to_string())?;
+
+  let search_limit = limit.unwrap_or(10);
+  let search_pattern = format!("%{}%", query.to_lowercase());
+
+  // Search events by title, note, or text_content
+  let events: Vec<TimelineEvent> = conn
+    .prepare(
+      "SELECT id, type, title, note, text_content, created_at, source, is_deleted
+       FROM timeline_events
+       WHERE is_deleted = 0 AND (
+         LOWER(title) LIKE ?1 OR
+         LOWER(note) LIKE ?1 OR
+         LOWER(text_content) LIKE ?1
+       )
+       ORDER BY created_at DESC
+       LIMIT ?2"
+    )
+    .map_err(|e| e.to_string())?
+    .query_map([&search_pattern, &search_limit.to_string()], |row| {
+      Ok(TimelineEvent {
+        id: row.get(0)?,
+        event_type: row.get(1)?,
+        title: row.get(2)?,
+        note: row.get(3)?,
+        text_content: row.get(4)?,
+        created_at: row.get(5)?,
+        source: row.get(6)?,
+        is_deleted: row.get::<_, i32>(7)? != 0,
+      })
+    })
+    .map_err(|e| e.to_string())?
+    .filter_map(|r| r.ok())
+    .collect();
+
+  // Get attachments for these events
+  let event_ids: Vec<String> = events.iter().map(|e| e.id.clone()).collect();
+  let mut attachments: Vec<Attachment> = Vec::new();
+
+  for event_id in &event_ids {
+    let event_attachments: Vec<Attachment> = conn
+      .prepare("SELECT id, event_id, kind, original_path, stored_path, file_name, mime_type, size_bytes, sha256, width, height, created_at FROM attachments WHERE event_id = ?")
+      .ok()
+      .map(|mut stmt| {
+        stmt.query_map([event_id], |row| {
+          Ok(Attachment {
+            id: row.get(0)?,
+            event_id: row.get(1)?,
+            kind: row.get(2)?,
+            original_path: row.get(3)?,
+            stored_path: row.get(4)?,
+            file_name: row.get(5)?,
+            mime_type: row.get(6)?,
+            size_bytes: row.get(7)?,
+            sha256: row.get(8)?,
+            width: row.get(9)?,
+            height: row.get(10)?,
+            created_at: row.get(11)?,
+          })
+        })
+        .ok()
+        .map(|iter| iter.filter_map(|r| r.ok()).collect())
+        .unwrap_or_default()
+      })
+      .unwrap_or_default();
+    attachments.extend(event_attachments);
+  }
+
+  // If no results from keyword search, get recent events
+  if events.is_empty() {
+    let recent_events: Vec<TimelineEvent> = conn
+      .prepare(
+        "SELECT id, type, title, note, text_content, created_at, source, is_deleted
+         FROM timeline_events
+         WHERE is_deleted = 0
+         ORDER BY created_at DESC
+         LIMIT ?1"
+      )
+      .map_err(|e| e.to_string())?
+      .query_map([&search_limit.to_string()], |row| {
+        Ok(TimelineEvent {
+          id: row.get(0)?,
+          event_type: row.get(1)?,
+          title: row.get(2)?,
+          note: row.get(3)?,
+          text_content: row.get(4)?,
+          created_at: row.get(5)?,
+          source: row.get(6)?,
+          is_deleted: row.get::<_, i32>(7)? != 0,
+        })
+      })
+      .map_err(|e| e.to_string())?
+      .filter_map(|r| r.ok())
+      .collect();
+
+    return Ok(RagContext {
+      events: recent_events,
+      attachments: Vec::new(),
+    });
+  }
+
+  Ok(RagContext { events, attachments })
+}
+
 #[tauri::command]
 fn get_setting(
   state: tauri::State<DbState>,
@@ -1130,6 +1252,7 @@ fn generate_daily_export(
   state: tauri::State<DbState>,
   date_key: String,
   format: String,
+  custom_path: Option<String>,
 ) -> Result<String, String> {
   let _guard = state.lock.lock().map_err(|_| "db lock".to_string())?;
   let conn = rusqlite::Connection::open(&state.path).map_err(|e| e.to_string())?;
@@ -1174,6 +1297,27 @@ fn generate_daily_export(
     .map_err(|e| e.to_string())?
     .filter_map(|r| r.ok())
     .collect();
+
+  // Create exports directory and assets folder early (needed for copying files)
+  let exports_dir = if let Some(ref custom) = custom_path {
+    if !custom.is_empty() {
+      PathBuf::from(custom)
+    } else {
+      app_handle
+        .path()
+        .resolve("exports", tauri::path::BaseDirectory::AppData)
+        .map_err(|e| e.to_string())?
+    }
+  } else {
+    app_handle
+      .path()
+      .resolve("exports", tauri::path::BaseDirectory::AppData)
+      .map_err(|e| e.to_string())?
+  };
+  fs::create_dir_all(&exports_dir).map_err(|e| e.to_string())?;
+
+  let assets_dir = exports_dir.join(format!("{}_assets", date_key));
+  fs::create_dir_all(&assets_dir).map_err(|e| e.to_string())?;
 
   // Generate Markdown content
   let mut content = format!("# Daily Record - {}\n\n", date_key);
@@ -1235,10 +1379,50 @@ fn generate_daily_export(
       .unwrap_or_default();
 
     if !attachments.is_empty() {
-      content.push_str("**Attachments:**\n");
       for att in &attachments {
-        let icon = if att.kind == "image" { "🖼️" } else { "📎" };
-        content.push_str(&format!("- {} {}\n", icon, att.file_name.as_deref().unwrap_or("Unknown")));
+        let file_name = att.file_name.as_deref().unwrap_or("unknown");
+        // Try to get the file path (stored_path or original_path)
+        let source_path = att.stored_path.as_ref()
+          .or(Some(&att.original_path))
+          .map(|p| PathBuf::from(p));
+
+        if let Some(src) = source_path {
+          if src.exists() {
+            // Copy file to assets folder
+            let dest_name = format!("{}_{}", &att.id[..8.min(att.id.len())], file_name);
+            let dest_path = assets_dir.join(&dest_name);
+            let _ = fs::copy(&src, &dest_path);
+
+            // Relative path from export file to asset
+            let relative_path = format!("{}_assets/{}", date_key, dest_name);
+
+            if att.kind == "image" {
+              // Embed image
+              if format == "html" {
+                content.push_str(&format!(
+                  "<img src=\"{}\" alt=\"{}\" style=\"max-width: 100%; border-radius: 8px; margin: 10px 0;\">\n\n",
+                  relative_path, file_name
+                ));
+              } else {
+                content.push_str(&format!("![{}]({})\n\n", file_name, relative_path));
+              }
+            } else {
+              // Link to file
+              if format == "html" {
+                content.push_str(&format!(
+                  "<p>📎 <a href=\"{}\">{}</a></p>\n",
+                  relative_path, file_name
+                ));
+              } else {
+                content.push_str(&format!("- 📎 [{}]({})\n", file_name, relative_path));
+              }
+            }
+          } else {
+            // File not found, just show name
+            let icon = if att.kind == "image" { "🖼️" } else { "📎" };
+            content.push_str(&format!("- {} {} (file not found)\n", icon, file_name));
+          }
+        }
       }
       content.push('\n');
     }
@@ -1247,19 +1431,40 @@ fn generate_daily_export(
   }
 
   // Save to file
-  let exports_dir = app_handle
-    .path()
-    .resolve("exports", tauri::path::BaseDirectory::AppData)
-    .map_err(|e| e.to_string())?;
-
-  fs::create_dir_all(&exports_dir).map_err(|e| e.to_string())?;
-
   let file_ext = if format == "html" { "html" } else { "md" };
   let file_name = format!("{}.{}", date_key, file_ext);
   let output_path = exports_dir.join(&file_name);
 
   // If HTML, wrap content
   let final_content = if format == "html" {
+    // Convert markdown to HTML more carefully
+    let html_body: String = content
+      .lines()
+      .map(|line| {
+        // Don't convert lines that already contain HTML tags
+        if line.contains("<img") || line.contains("<a ") || line.contains("<p>") {
+          line.to_string()
+        } else if line.starts_with("# ") {
+          format!("<h1>{}</h1>", &line[2..])
+        } else if line.starts_with("## ") {
+          format!("<h2>{}</h2>", &line[3..])
+        } else if line.starts_with("---") {
+          "<hr>".to_string()
+        } else if line.starts_with("```") {
+          if line == "```" { "</pre>".to_string() } else { "<pre>".to_string() }
+        } else if line.starts_with("- ") {
+          format!("<li>{}</li>", &line[2..])
+        } else if line.starts_with("**") && line.ends_with("**") {
+          format!("<strong>{}</strong>", &line[2..line.len()-2])
+        } else if line.is_empty() {
+          "<br>".to_string()
+        } else {
+          format!("<p>{}</p>", line)
+        }
+      })
+      .collect::<Vec<_>>()
+      .join("\n");
+
     format!(
       r#"<!DOCTYPE html>
 <html>
@@ -1272,6 +1477,8 @@ fn generate_daily_export(
     h2 {{ color: #555; margin-top: 30px; }}
     hr {{ border: none; border-top: 1px solid #eee; margin: 20px 0; }}
     pre {{ background: #f5f5f5; padding: 15px; border-radius: 5px; overflow-x: auto; }}
+    img {{ max-width: 100%; border-radius: 8px; margin: 10px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }}
+    li {{ margin: 4px 0; }}
   </style>
 </head>
 <body>
@@ -1279,7 +1486,7 @@ fn generate_daily_export(
 </body>
 </html>"#,
       date_key,
-      content.replace("\n", "<br>\n").replace("# ", "<h1>").replace("## ", "<h2>")
+      html_body
     )
   } else {
     content.clone()
@@ -1331,11 +1538,23 @@ fn list_exports(
 #[tauri::command]
 fn open_export_folder(
   app_handle: tauri::AppHandle,
+  custom_path: Option<String>,
 ) -> Result<String, String> {
-  let exports_dir = app_handle
-    .path()
-    .resolve("exports", tauri::path::BaseDirectory::AppData)
-    .map_err(|e| e.to_string())?;
+  let exports_dir = if let Some(ref custom) = custom_path {
+    if !custom.is_empty() {
+      PathBuf::from(custom)
+    } else {
+      app_handle
+        .path()
+        .resolve("exports", tauri::path::BaseDirectory::AppData)
+        .map_err(|e| e.to_string())?
+    }
+  } else {
+    app_handle
+      .path()
+      .resolve("exports", tauri::path::BaseDirectory::AppData)
+      .map_err(|e| e.to_string())?
+  };
 
   fs::create_dir_all(&exports_dir).map_err(|e| e.to_string())?;
 
@@ -1367,6 +1586,7 @@ fn open_export_folder(
 
 fn main() {
   tauri::Builder::default()
+    .plugin(tauri_plugin_dialog::init())
     .setup(|app| {
       let db_path = app
         .path()
@@ -1668,7 +1888,9 @@ fn main() {
       // Export commands
       generate_daily_export,
       list_exports,
-      open_export_folder
+      open_export_folder,
+      // RAG commands
+      search_for_rag
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

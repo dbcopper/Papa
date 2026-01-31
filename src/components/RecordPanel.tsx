@@ -1,4 +1,5 @@
 import { RefObject } from "react";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { getFileDisplayName, isImageFile } from "../utils/helpers";
 
 type RecordPanelProps = {
@@ -65,10 +66,21 @@ export function RecordPanel({
           <div className="record-files">
             {pendingPaths.map((path, index) => (
               <div key={index} className="record-file-item">
-                <span className="record-file-icon">
-                  {isImageFile(path) ? "🖼️" : "📄"}
-                </span>
-                <span className="record-file-name">{getFileDisplayName(path)}</span>
+                {isImageFile(path) ? (
+                  <div className="record-image-preview">
+                    <img
+                      src={convertFileSrc(path)}
+                      alt={getFileDisplayName(path)}
+                      className="record-image-thumbnail"
+                    />
+                    <span className="record-file-name">{getFileDisplayName(path)}</span>
+                  </div>
+                ) : (
+                  <>
+                    <span className="record-file-icon">📄</span>
+                    <span className="record-file-name">{getFileDisplayName(path)}</span>
+                  </>
+                )}
               </div>
             ))}
           </div>

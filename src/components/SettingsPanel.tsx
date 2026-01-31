@@ -1,18 +1,25 @@
 import { LLM_MODELS } from "../constants";
 import type { LlmSettings } from "../types";
+import type { ExportSettings } from "../hooks";
 
 type SettingsPanelProps = {
   visible: boolean;
   llmSettings: LlmSettings;
+  exportSettings: ExportSettings;
   onProviderChange: (provider: "openai" | "anthropic") => void;
   onSettingsChange: (settings: Partial<LlmSettings>) => void;
+  onSelectExportFolder: () => void;
+  onResetExportPath: () => void;
 };
 
 export function SettingsPanel({
   visible,
   llmSettings,
+  exportSettings,
   onProviderChange,
   onSettingsChange,
+  onSelectExportFolder,
+  onResetExportPath,
 }: SettingsPanelProps) {
   if (!visible) return null;
 
@@ -62,6 +69,35 @@ export function SettingsPanel({
             {llmSettings.apiKey
               ? "✓ API key configured"
               : "⚠️ API key required for LLM conversations"}
+          </div>
+        </div>
+
+        <div className="settings-divider" />
+
+        <div className="settings-section">
+          <label className="settings-label">Export Folder</label>
+          <div className="settings-export-path">
+            <span className="settings-export-path-text">
+              {exportSettings.exportPath || "(Default: AppData)"}
+            </span>
+          </div>
+          <div className="settings-export-buttons">
+            <button
+              className="settings-export-btn"
+              onClick={onSelectExportFolder}
+              data-no-drag
+            >
+              Browse...
+            </button>
+            {exportSettings.exportPath && (
+              <button
+                className="settings-export-btn settings-export-reset"
+                onClick={onResetExportPath}
+                data-no-drag
+              >
+                Reset
+              </button>
+            )}
           </div>
         </div>
 

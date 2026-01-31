@@ -10,6 +10,7 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@tauri-apps/plugin-dialog": "^2",
     "animejs": "^4.3.5",
     "gsap": "^3.14.2",
     "react": "^18.2.0",
