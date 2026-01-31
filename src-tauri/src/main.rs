@@ -10,6 +10,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{Emitter, Manager};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use device_query::{DeviceQuery, DeviceState, Keycode};
 
 fn generate_id() -> String {
@@ -1599,6 +1601,43 @@ fn main() {
         lock: Mutex::new(()),
       };
       app.manage(state);
+
+      // Setup system tray
+      let show_item = MenuItemBuilder::new("Show Papa").id("show").build(app)?;
+      let quit_item = MenuItemBuilder::new("Quit").id("quit").build(app)?;
+      let menu = MenuBuilder::new(app)
+        .item(&show_item)
+        .separator()
+        .item(&quit_item)
+        .build()?;
+
+      let _tray = TrayIconBuilder::new()
+        .icon(app.default_window_icon().unwrap().clone())
+        .menu(&menu)
+        .tooltip("Papa Pet")
+        .on_menu_event(|app, event| {
+          match event.id().as_ref() {
+            "show" => {
+              if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+              }
+            }
+            "quit" => {
+              app.exit(0);
+            }
+            _ => {}
+          }
+        })
+        .on_tray_icon_event(|tray, event| {
+          if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
+            if let Some(window) = tray.app_handle().get_webview_window("main") {
+              let _ = window.show();
+              let _ = window.set_focus();
+            }
+          }
+        })
+        .build(app)?;
 
       // Start global mouse tracking
       let app_handle_mouse = app.handle().clone();

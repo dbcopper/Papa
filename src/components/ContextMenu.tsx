@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 type ContextMenuProps = {
@@ -22,9 +21,9 @@ export function ContextMenu({
 
   const appWindow = getCurrentWindow();
 
-  const handleHide = async () => {
+  const handleHideToTray = async () => {
     onClose();
-    await invoke("hide_for", { ms: 10000 });
+    await appWindow.hide();
   };
 
   const handleQuit = async () => {
@@ -63,8 +62,8 @@ export function ContextMenu({
       >
         ⚙️ Settings
       </button>
-      <button onClick={() => void handleHide()}>
-        👻 Hide 10s
+      <button onClick={() => void handleHideToTray()}>
+        📥 Hide to Tray
       </button>
       <button onClick={() => void handleQuit()} className="context-menu-quit">
         ❌ Quit
