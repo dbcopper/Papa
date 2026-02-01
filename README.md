@@ -14,7 +14,7 @@
   <a href="#usage">Usage</a> •
   <a href="#tech-stack">Tech Stack</a> •
   <a href="#architecture">Architecture</a> •
-  <a href="#roadmap">Roadmap</a>
+  <a href="#roadmap">Development</a>
 </p>
 
 <p align="center">
