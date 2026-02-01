@@ -43,13 +43,13 @@ Papa Pet is a **lightweight, always-on-top desktop companion** that helps you ca
 
 ### Core Features
 
-| Feature | Description |
-|---------|-------------|
-| **Drag & Drop Recording** | Drop files, images, or text directly onto Papa to create instant records |
-| **Smart Reminders** | Set quick reminders (10min, 1hr, tomorrow, 3 days) attached to your records |
-| **Papa Space** | Your personal timeline view - browse, edit, and manage all your records |
-| **Daily Export** | Generate beautiful Markdown or HTML summaries of your day |
-| **AI Integration** | Optional LLM support (OpenAI/Anthropic) for summaries and insights |
+| Feature                         | Description                                                                 |
+| ------------------------------- | --------------------------------------------------------------------------- |
+| **Drag & Drop Recording** | Drop files, images, or text directly onto Papa to create instant records    |
+| **Smart Reminders**       | Set quick reminders (10min, 1hr, tomorrow, 3 days) attached to your records |
+| **Papa Space**            | Your personal timeline view - browse, edit, and manage all your records     |
+| **Daily Export**          | Generate beautiful Markdown or HTML summaries of your day                   |
+| **AI Integration**        | Optional LLM support (OpenAI/Anthropic) for summaries and insights          |
 
 ### Pet Behaviors
 
@@ -57,32 +57,12 @@ Papa Pet is a **lightweight, always-on-top desktop companion** that helps you ca
 <tr>
 <td width="50%">
 
-**Emotional States**
-- Idle breathing animation
-- Excited when you're productive
-- Tired when you've been working long
-- Happy after successful actions
-- Thinking during AI processing
-
-</td>
-<td width="50%">
-
-**Interactive Features**
-- Eyes follow your cursor across all windows
-- Responds to your typing and mouse activity
-- Mood-based expressions and animations
-- Right-click context menu for quick actions
-
-</td>
-</tr>
-</table>
-
 ### Screenshots
 
 <p align="center">
-  <img src="public/assets/screenshot-idle.png" alt="Idle State" width="200" />
-  <img src="public/assets/screenshot-record.png" alt="Record Panel" width="200" />
-  <img src="public/assets/screenshot-space.png" alt="Papa Space" width="200" />
+  <img src="public/assets/ask_papa.png" alt="Idle State" width="200" />
+  <img src="public/assets/record.png" alt="Record Panel" width="200" />
+  <img src="public/assets/papa_space.png" alt="Papa Space" width="200" />
 </p>
 
 ---
@@ -119,22 +99,22 @@ pnpm tauri build
 
 ### Basic Operations
 
-| Action | How to |
-|--------|--------|
-| **Record a file** | Drag & drop any file onto Papa |
-| **Record text** | Select text in any app, drag onto Papa |
-| **Add reminder** | Toggle "Remind me" in the record panel |
-| **Open Papa Space** | Right-click → Papa Space |
-| **Change settings** | Right-click → Settings |
-| **Hide temporarily** | Right-click → Hide 10s |
-| **Sleep mode** | Right-click → Sleep (stops animations) |
+| Action                     | How to                                  |
+| -------------------------- | --------------------------------------- |
+| **Record a file**    | Drag & drop any file onto Papa          |
+| **Record text**      | Select text in any app, drag onto Papa  |
+| **Add reminder**     | Toggle "Remind me" in the record panel  |
+| **Open Papa Space**  | Right-click → Papa Space               |
+| **Change settings**  | Right-click → Settings                 |
+| **Hide temporarily** | Right-click → Hide 10s                 |
+| **Sleep mode**       | Right-click → Sleep (stops animations) |
 
 ### Keyboard Shortcuts
 
-| Shortcut | Action |
-|----------|--------|
-| `Escape` | Close current panel |
-| `Enter` | Save record (when panel is open) |
+| Shortcut   | Action                           |
+| ---------- | -------------------------------- |
+| `Escape` | Close current panel              |
+| `Enter`  | Save record (when panel is open) |
 
 ### LLM Configuration
 
@@ -249,28 +229,13 @@ papa-pet/
 
 Papa Pet uses SQLite with the following tables:
 
-| Table | Purpose |
-|-------|---------|
+| Table               | Purpose                                      |
+| ------------------- | -------------------------------------------- |
 | `timeline_events` | Core records (files, images, text, thoughts) |
-| `attachments` | File/image metadata linked to events |
-| `reminders` | Scheduled reminders attached to events |
-| `daily_exports` | Export history and file paths |
-| `settings` | User preferences (key-value store) |
-
----
-
-## Roadmap
-
-- [x] **Phase 1**: Data layer with SQLite
-- [x] **Phase 2**: Record panel with reminders
-- [x] **Phase 3**: Reminder notification system
-- [x] **Phase 4**: Papa Space timeline view
-- [x] **Phase 5**: Daily export (MD/HTML)
-- [x] **Phase 6**: Code modularization
-- [ ] **Phase 7**: Morning greeting & daily briefing
-- [ ] **Phase 8**: PDF export support
-- [ ] **Phase 9**: Cloud sync (optional)
-- [ ] **Phase 10**: Plugin system
+| `attachments`     | File/image metadata linked to events         |
+| `reminders`       | Scheduled reminders attached to events       |
+| `daily_exports`   | Export history and file paths                |
+| `settings`        | User preferences (key-value store)           |
 
 ---
 
@@ -291,16 +256,10 @@ pnpm lint               # Run ESLint
 pnpm format             # Run Prettier
 ```
 
-### Debug Mode
-
-Toggle debug mode in the UI to see:
-- Current pet state
-- Manual state controls
-- Animation triggers
-
 ### Database Location
 
 The SQLite database is stored in your platform's app data directory:
+
 - **Windows**: `%APPDATA%\papa-pet\`
 - **macOS**: `~/Library/Application Support/papa-pet/`
 - **Linux**: `~/.local/share/papa-pet/`
