@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="public/assets/papa-banner.png" alt="Papa Pet Banner" width="600" />
+  <img src="public/assets/banner.png" alt="Papa Pet Banner" width="600" />
 </p>
 
 <h1 align="center">Papa Pet</h1>
@@ -26,7 +26,7 @@
 </p>
 
 <p align="center">
-  <img src="public/assets/demo.gif" alt="Papa Pet Demo" width="500" />
+  <img src="public/assets/papa.gif" alt="Papa Pet Demo" width="500" />
 </p>
 
 ---
