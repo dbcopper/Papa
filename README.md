@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="public/assets/banner.png" alt="Papa Pet Banner" width="600" />
-</p>
+
 
 <h1 align="center">Papa Pet</h1>
 
